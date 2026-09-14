@@ -6,9 +6,10 @@
   "author": "Idris Akorede Ibrahim",
   "description": "Local-only active-session tracker for Omarchy.",
   "license": "MIT",
-  "kinds": ["service"],
+  "kinds": ["service", "panel"],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml"
+    "service": "Service.qml",
+    "panel": "Panel.qml"
   }
 }

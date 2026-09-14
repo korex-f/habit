@@ -40,10 +40,13 @@ Item {
   property double todayStoredDurationMs: 0
   property int activeSessionId: 0
   property double activeSessionStartMs: 0
+  property double activeSessionCheckpointMs: 0
   property bool sessionStartPending: false
   property bool sessionEndPending: false
   property var dbQueue: []
   property var dbCurrent: null
+  property double displayNowMs: Date.now()
+  readonly property double todayDurationMs: todayStoredDurationMs + liveTodayDelta()
 
   function configuredIdleTimeout() {
     var raw = String(Quickshell.env("HABIT_IDLE_TIMEOUT") || "").trim()
@@ -79,6 +82,11 @@ Item {
 
   function todayStartMs() {
     var now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  }
+
+  function liveTodayDelta() {
+    if (!activeSessionId || effectiveState !== ActivityStateMachine.ACTIVE) return 0
+    return Math.max(0, displayNowMs - Math.max(activeSessionCheckpointMs, todayStartMs()))
   }
 
   function nextLocalMidnight(ms) {
@@ -121,11 +129,14 @@ Item {
     })
   }
 
-  function refreshStorageStats() {
+  function refreshStorageStats(onTodayUpdated) {
     if (!storageReady) return
     queueSql("count", ActivityStore.countSql(), function(output) { totalStoredSessions = Number(output.trim() || 0) })
     var start = todayStartMs(); var end = nextLocalMidnight(start)
-    queueSql("today-total", ActivityStore.totalBetweenSql(start, end), function(output) { todayStoredDurationMs = Number(output.trim() || 0) })
+    queueSql("today-total", ActivityStore.totalBetweenSql(start, end), function(output) {
+      todayStoredDurationMs = Number(output.trim() || 0)
+      if (onTodayUpdated) onTodayUpdated()
+    })
   }
 
   // Public future-UI API. Results are local-day overlap totals, including
@@ -148,7 +159,7 @@ Item {
     var now = Date.now()
     queueSql("session-start", ActivityStore.startSql(now), function(output) {
       sessionStartPending = false
-      activeSessionId = Number(output.trim() || 0); activeSessionStartMs = now
+      activeSessionId = Number(output.trim() || 0); activeSessionStartMs = now; activeSessionCheckpointMs = now
       if (!activeSessionId) { failStorage("session-start", "missing id"); return }
       refreshStorageStats(); log("session started")
       syncTracking()
@@ -157,14 +168,20 @@ Item {
 
   function checkpointSession() {
     if (!storageReady || !activeSessionId) return
-    var now = Date.now(); queueSql("session-checkpoint", ActivityStore.checkpointSql(activeSessionId, activeSessionStartMs, now), function() { refreshStorageStats() })
+    var now = Date.now()
+    queueSql("session-checkpoint", ActivityStore.checkpointSql(activeSessionId, activeSessionStartMs, now), function() {
+      // Retain the old in-memory checkpoint until its durable total has been
+      // read back. That keeps persisted duration + live delta continuous at
+      // the checkpoint boundary without changing the 60-second write policy.
+      refreshStorageStats(function() { activeSessionCheckpointMs = now })
+    })
   }
 
   function endSession() {
     sessionEndPending = true
     var id = activeSessionId; var started = activeSessionStartMs; var now = Date.now()
     queueSql("session-end", ActivityStore.endSql(id, started, now), function() {
-      activeSessionId = 0; activeSessionStartMs = 0; sessionEndPending = false; refreshStorageStats(); log("session ended"); syncTracking()
+      activeSessionId = 0; activeSessionStartMs = 0; activeSessionCheckpointMs = 0; sessionEndPending = false; refreshStorageStats(); log("session ended"); syncTracking()
     })
   }
 
@@ -248,6 +265,7 @@ Item {
   Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; onTriggered: root.requestLockProbe("lock-poll") }
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
   Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
+  Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE; onTriggered: root.displayNowMs = Date.now() }
 
   Process {
     id: dbProcess
@@ -310,9 +328,8 @@ Item {
   IpcHandler {
     target: "habit"
     function status(): string {
-      var liveToday = root.activeSessionId && root.effectiveState === ActivityStateMachine.ACTIVE
-        ? Math.max(0, Date.now() - Math.max(root.activeSessionStartMs, root.todayStartMs())) : 0
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayStoredDurationMs + liveToday, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
+      root.displayNowMs = Date.now()
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
     function disable(): void { root.setDisabled(true) }
     function enable(): void { root.setDisabled(false) }
@@ -332,7 +349,7 @@ Item {
 
   Component.onDestruction: {
     stopping = true
-    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop()
+    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop(); displayTimer.stop()
     lockProbe.running = false; suspendListener.running = false; dbProcess.running = false
     log("service stopping")
   }
