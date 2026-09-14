@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.dki.habit",
+  "name": "Habit",
+  "version": "0.1.0",
+  "author": "Idris Akorede Ibrahim",
+  "description": "Local-only active-session tracker for Omarchy.",
+  "license": "MIT",
+  "kinds": ["service"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
