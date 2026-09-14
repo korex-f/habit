@@ -5,13 +5,15 @@ var ACTIVE = "ACTIVE"
 var IDLE = "IDLE"
 var LOCKED = "LOCKED"
 var SUSPENDED = "SUSPENDED"
+var DISABLED = "DISABLED"
 
 function sources(input) {
   var value = input || {}
   return {
     idle: value.idle === true,
     locked: value.locked === true,
-    suspended: value.suspended === true
+    suspended: value.suspended === true,
+    disabled: value.disabled === true
   }
 }
 
@@ -19,6 +21,7 @@ function sources(input) {
 // active, but that must never make Habit appear active while still locked.
 function derive(input) {
   var value = sources(input)
+  if (value.disabled) return DISABLED
   if (value.suspended) return SUSPENDED
   if (value.locked) return LOCKED
   if (value.idle) return IDLE
@@ -32,5 +35,5 @@ function transition(previous, input) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, sources: sources, derive: derive, transition: transition }
+  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition }
 }

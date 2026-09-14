@@ -1,8 +1,23 @@
 # Habit
 
-Habit is a local-first activity tracker for Omarchy. This repository currently
-contains only Milestone 1, the platform spike: it detects and logs activity
-state transitions. It does not store activity data or provide a UI.
+Habit is a local-first activity tracker for Omarchy. Milestone 2 records only
+local activity-session timestamps; it has no UI, app tracking, or network use.
+
+## Storage
+
+Habit stores SQLite data at `~/.local/share/omarchy-habit/habit.db`. Each row
+contains only session timestamps and duration. WAL mode with `synchronous=FULL`
+is used, and an active session is checkpointed every 60 seconds. On startup an
+unfinished session is closed at its last checkpoint, never at the restart time.
+
+The service exposes `omarchy-shell habit status`, including state, current
+session start, today's active milliseconds, stored-session count, and storage
+health. For storage verification, inspect only the local database:
+
+```sh
+sqlite3 ~/.local/share/omarchy-habit/habit.db \
+  'select id, started_at_ms, last_checkpoint_at_ms, ended_at_ms, duration_ms from activity_sessions;'
+```
 
 ## Install for development
 

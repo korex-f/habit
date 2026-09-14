@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import "js/ActivityStateMachine.js" as ActivityStateMachine
+import "js/ActivityStore.js" as ActivityStore
 
 Item {
   id: root
@@ -12,11 +13,14 @@ Item {
   readonly property int lockPollIntervalMs: 3000
   readonly property bool debugEnabled: Quickshell.env("HABIT_DEBUG") === "1"
   readonly property string sessionId: Quickshell.env("XDG_SESSION_ID")
+  readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-habit"
+  readonly property string databasePath: dataDir + "/habit.db"
 
   // Raw platform signals. Never derive state by overwriting these values.
   property bool idle: false
   property bool locked: false
   property bool suspended: false
+  property bool disabled: false
   property bool idleKnown: false
   property bool lockKnown: false
   property bool resumeReevaluationPending: false
@@ -30,6 +34,16 @@ Item {
   property string effectiveState: ""
   property string lockProbeReason: "startup"
   property string lockProbeOutput: ""
+  property bool storageReady: false
+  property string storageHealth: "starting"
+  property int totalStoredSessions: 0
+  property double todayStoredDurationMs: 0
+  property int activeSessionId: 0
+  property double activeSessionStartMs: 0
+  property bool sessionStartPending: false
+  property bool sessionEndPending: false
+  property var dbQueue: []
+  property var dbCurrent: null
 
   function configuredIdleTimeout() {
     var raw = String(Quickshell.env("HABIT_IDLE_TIMEOUT") || "").trim()
@@ -44,21 +58,114 @@ Item {
 
   function log(message) { console.log("[habit] " + message) }
   function debug(message) { if (debugEnabled) log("debug " + message) }
-  function sourceSummary() { return "idle=" + idle + " locked=" + locked + " suspended=" + suspended }
+  function sourceSummary() { return "idle=" + idle + " locked=" + locked + " suspended=" + suspended + " disabled=" + disabled }
 
   function reconcile(reason) {
     if (!idleKnown || !lockKnown || resumeReevaluationPending) return
-    var result = ActivityStateMachine.transition(effectiveState, { idle: idle, locked: locked, suspended: suspended })
+    var result = ActivityStateMachine.transition(effectiveState, { idle: idle, locked: locked, suspended: suspended, disabled: disabled })
     if (!startupLogged) {
       effectiveState = result.state
       startupLogged = true
       log("initial state=" + effectiveState + " " + sourceSummary())
+      syncTracking()
       return
     }
     if (!result.changed) return
     var previous = effectiveState
     effectiveState = result.state
     log(previous + " -> " + effectiveState + " reason=" + reason)
+    syncTracking()
+  }
+
+  function todayStartMs() {
+    var now = new Date(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  }
+
+  function nextLocalMidnight(ms) {
+    var day = new Date(ms); return new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime()
+  }
+
+  function localDayBoundaries(startMs, endMs) {
+    var first = new Date(startMs); var cursor = new Date(first.getFullYear(), first.getMonth(), first.getDate())
+    var bounds = [cursor.getTime()]
+    while (bounds[bounds.length - 1] < endMs) {
+      cursor.setDate(cursor.getDate() + 1)
+      bounds.push(cursor.getTime())
+    }
+    return bounds
+  }
+
+  function queueDb(label, command, callback) {
+    var next = dbQueue.slice(); next.push({ label: label, command: command, callback: callback }); dbQueue = next; runNextDb()
+  }
+
+  function queueSql(label, sql, callback) { queueDb(label, ["sqlite3", "-batch", "-noheader", databasePath, sql], callback) }
+
+  function runNextDb() {
+    if (dbProcess.running || dbCurrent || dbQueue.length === 0) return
+    dbCurrent = dbQueue[0]; dbProcess.command = dbCurrent.command; dbProcess.running = true
+  }
+
+  function failStorage(label, detail) {
+    storageHealth = "error: " + label
+    console.warn("[habit] storage error=" + label + " " + detail)
+  }
+
+  function initializeStorage() {
+    queueDb("mkdir", ["mkdir", "-p", dataDir], function() {
+      queueSql("schema", ActivityStore.schemaSql(), function() {
+        queueSql("recovery", ActivityStore.recoverSql(), function() {
+          storageReady = true; storageHealth = "ok"; refreshStorageStats(); syncTracking(); log("storage ready")
+        })
+      })
+    })
+  }
+
+  function refreshStorageStats() {
+    if (!storageReady) return
+    queueSql("count", ActivityStore.countSql(), function(output) { totalStoredSessions = Number(output.trim() || 0) })
+    var start = todayStartMs(); var end = nextLocalMidnight(start)
+    queueSql("today-total", ActivityStore.totalBetweenSql(start, end), function(output) { todayStoredDurationMs = Number(output.trim() || 0) })
+  }
+
+  // Public future-UI API. Results are local-day overlap totals, including
+  // sessions that cross midnight; no content metadata exists in the schema.
+  function requestDailyTotals(startMs, endMs, callback) {
+    if (!storageReady) { callback([]); return }
+    queueSql("daily-totals", ActivityStore.dailySql(localDayBoundaries(startMs, endMs)), function(output) {
+      try { callback(JSON.parse(output.trim() || "[]")) } catch (error) { callback([]) }
+    })
+  }
+
+  function syncTracking() {
+    if (!storageReady || !startupLogged) return
+    if (effectiveState === ActivityStateMachine.ACTIVE && activeSessionId === 0 && !sessionStartPending) beginSession()
+    else if (effectiveState !== ActivityStateMachine.ACTIVE && activeSessionId !== 0 && !sessionEndPending) endSession()
+  }
+
+  function beginSession() {
+    sessionStartPending = true
+    var now = Date.now()
+    queueSql("session-start", ActivityStore.startSql(now), function(output) {
+      sessionStartPending = false
+      activeSessionId = Number(output.trim() || 0); activeSessionStartMs = now
+      if (!activeSessionId) { failStorage("session-start", "missing id"); return }
+      refreshStorageStats(); log("session started")
+      syncTracking()
+    })
+  }
+
+  function checkpointSession() {
+    if (!storageReady || !activeSessionId) return
+    var now = Date.now(); queueSql("session-checkpoint", ActivityStore.checkpointSql(activeSessionId, activeSessionStartMs, now), function() { refreshStorageStats() })
+  }
+
+  function endSession() {
+    sessionEndPending = true
+    var id = activeSessionId; var started = activeSessionStartMs; var now = Date.now()
+    queueSql("session-end", ActivityStore.endSql(id, started, now), function() {
+      activeSessionId = 0; activeSessionStartMs = 0; sessionEndPending = false; refreshStorageStats(); log("session ended"); syncTracking()
+    })
   }
 
   function setIdle(value, reason) {
@@ -85,6 +192,12 @@ Item {
     suspended = next
     debug("suspended=" + suspended + " reason=" + reason)
     reconcile(reason)
+  }
+
+  function setDisabled(value) {
+    if (disabled === (value === true)) return
+    disabled = value === true
+    reconcile(disabled ? "tracking-disabled" : "tracking-enabled")
   }
 
   function requestLockProbe(reason) {
@@ -134,6 +247,22 @@ Item {
   Timer { id: initialIdleTimer; interval: 250; repeat: false; onTriggered: root.setIdle(idleMonitor.isIdle, "startup-idle") }
   Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; onTriggered: root.requestLockProbe("lock-poll") }
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
+  Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
+
+  Process {
+    id: dbProcess
+    running: false
+    stdout: StdioCollector { id: dbStdout; waitForEnd: true }
+    stderr: StdioCollector { id: dbStderr; waitForEnd: true }
+    onExited: function(exitCode) {
+      var work = root.dbCurrent; root.dbCurrent = null
+      var next = root.dbQueue.slice(1); root.dbQueue = next
+      if (!work) { root.runNextDb(); return }
+      if (exitCode !== 0) root.failStorage(work.label, String(dbStderr.text || dbStdout.text || "exit=" + exitCode).trim())
+      else if (work.callback) work.callback(String(dbStdout.text || ""))
+      root.runNextDb()
+    }
+  }
 
   Process {
     id: lockProbe
@@ -181,8 +310,12 @@ Item {
   IpcHandler {
     target: "habit"
     function status(): string {
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, idleTimeoutSeconds: root.idleTimeoutSeconds, lockDetection: "omarchy-shell-poll" })
+      var liveToday = root.activeSessionId && root.effectiveState === ActivityStateMachine.ACTIVE
+        ? Math.max(0, Date.now() - Math.max(root.activeSessionStartMs, root.todayStartMs())) : 0
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayStoredDurationMs + liveToday, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
+    function disable(): void { root.setDisabled(true) }
+    function enable(): void { root.setDisabled(false) }
   }
 
   Component.onCompleted: {
@@ -193,12 +326,14 @@ Item {
     lockPollTimer.start()
     requestLockProbe("startup-lock")
     startSuspendListener()
+    checkpointTimer.start()
+    initializeStorage()
   }
 
   Component.onDestruction: {
     stopping = true
-    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop()
-    lockProbe.running = false; suspendListener.running = false
+    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop()
+    lockProbe.running = false; suspendListener.running = false; dbProcess.running = false
     log("service stopping")
   }
 }
