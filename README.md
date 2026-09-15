@@ -1,7 +1,8 @@
 # Habit
 
-Habit is a local-first activity tracker for Omarchy. Milestone 2 records only
-local activity-session timestamps; it has no UI, app tracking, or network use.
+Habit is a local-first activity tracker for Omarchy. It records only local
+activity-session timestamps and presents a contribution-style heatmap plus the
+last seven calendar days. It has no app tracking or network use.
 
 ## Storage
 
@@ -11,8 +12,8 @@ is used, and an active session is checkpointed every 60 seconds. On startup an
 unfinished session is closed at its last checkpoint, never at the restart time.
 
 The service exposes `omarchy-shell habit status`, including state, current
-session start, today's active milliseconds, stored-session count, and storage
-health. For storage verification, inspect only the local database:
+session start, today's and all-time active milliseconds, stored-session count,
+and storage health. For storage verification, inspect only the local database:
 
 ```sh
 sqlite3 ~/.local/share/omarchy-habit/habit.db \
@@ -53,3 +54,15 @@ so lock state is read from `omarchy-shell lock isLocked` every three seconds.
 That conservative fallback is the smallest reliable public mechanism available
 to an ordinary third-party service. No information about apps, windows, input
 contents, or activity history is collected.
+
+## Panel
+
+Open the panel through Omarchy's standard plugin surface API:
+
+```sh
+omarchy-shell shell toggle io.github.dki.habit '{}'
+```
+
+The panel starts each opening with today selected. `j`/`k` move one local
+calendar day, `h`/`l` move one local calendar week, and `g` returns to today.
+Selection never moves into the future. `Esc` and `q` close the panel.
