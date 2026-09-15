@@ -40,6 +40,17 @@ function countSql() { return "SELECT count(*) FROM activity_sessions;" }
 // session's unpersisted tail is added in Service.qml, never by SQLite.
 function totalDurationSql() { return "SELECT COALESCE(SUM(duration_ms),0) FROM activity_sessions;" }
 
+function clearHistorySql() { return "DELETE FROM activity_sessions;" }
+
+// Returns privacy-safe, local-day-clipped session intervals. Service.qml adds
+// the active session's uncheckpointed tail in memory before exposing it.
+function daySessionsSql(start, end) {
+  return "SELECT COALESCE(json_group_array(json_object('id',id,'start',clip_start,'end',clip_end)),'[]') FROM ("
+    + "SELECT id,MAX(started_at_ms," + start + ") AS clip_start,MIN(COALESCE(ended_at_ms,last_checkpoint_at_ms)," + end + ") AS clip_end "
+    + "FROM activity_sessions WHERE started_at_ms < " + end + " AND COALESCE(ended_at_ms,last_checkpoint_at_ms) > " + start
+    + " ORDER BY clip_start ASC);"
+}
+
 function totalBetweenSql(start, end) {
   return "SELECT COALESCE(SUM(MAX(0,MIN(COALESCE(ended_at_ms,last_checkpoint_at_ms)," + end
     + ")-MAX(started_at_ms," + start + "))),0) FROM activity_sessions "
@@ -56,4 +67,4 @@ function dailySql(boundaries) {
     + "SELECT json_group_array(json_object('start',day_start,'end',day_end,'durationMs',COALESCE((SELECT SUM(MAX(0,MIN(COALESCE(ended_at_ms,last_checkpoint_at_ms),day_end)-MAX(started_at_ms,day_start))) FROM activity_sessions WHERE started_at_ms < day_end AND COALESCE(ended_at_ms,last_checkpoint_at_ms) > day_start),0))) FROM days;"
 }
 
-if (typeof module !== "undefined") module.exports = { schemaSql, recoverSql, startSql, checkpointSql, endSql, countSql, totalDurationSql, totalBetweenSql, dailySql }
+if (typeof module !== "undefined") module.exports = { schemaSql, recoverSql, startSql, checkpointSql, endSql, countSql, totalDurationSql, clearHistorySql, daySessionsSql, totalBetweenSql, dailySql }

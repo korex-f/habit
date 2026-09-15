@@ -9,18 +9,28 @@ Item {
   id: root
 
   readonly property int productionIdleTimeoutSeconds: 300
+  readonly property int minimumIdleTimeoutSeconds: 30
+  readonly property int maximumIdleTimeoutSeconds: 3600
   readonly property int idleTimeoutSeconds: configuredIdleTimeout()
   readonly property int lockPollIntervalMs: 3000
   readonly property bool debugEnabled: Quickshell.env("HABIT_DEBUG") === "1"
   readonly property string sessionId: Quickshell.env("XDG_SESSION_ID")
   readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-habit"
   readonly property string databasePath: dataDir + "/habit.db"
+  readonly property string settingsPath: dataDir + "/settings.json"
 
   // Raw platform signals. Never derive state by overwriting these values.
   property bool idle: false
   property bool locked: false
   property bool suspended: false
   property bool disabled: false
+  property bool trackingEnabled: true
+  property int idleTimeoutSettingSeconds: productionIdleTimeoutSeconds
+  property string barDisplayMode: "off"
+  property bool settingsLoaded: false
+  property bool settingsHydrating: false
+  property bool clearingHistory: false
+  property bool historyClearPending: false
   property bool idleKnown: false
   property bool lockKnown: false
   property bool resumeReevaluationPending: false
@@ -55,13 +65,24 @@ Item {
 
   function configuredIdleTimeout() {
     var raw = String(Quickshell.env("HABIT_IDLE_TIMEOUT") || "").trim()
-    if (raw === "") return productionIdleTimeoutSeconds
+    if (raw === "") return validIdleTimeout(idleTimeoutSettingSeconds) ? idleTimeoutSettingSeconds : productionIdleTimeoutSeconds
     var value = Number(raw)
     if (!isFinite(value) || value < 1 || Math.floor(value) !== value || value > 86400) {
-      console.warn("[habit] invalid HABIT_IDLE_TIMEOUT; using " + productionIdleTimeoutSeconds + "s")
-      return productionIdleTimeoutSeconds
+      console.warn("[habit] invalid HABIT_IDLE_TIMEOUT; using persisted setting")
+      return validIdleTimeout(idleTimeoutSettingSeconds) ? idleTimeoutSettingSeconds : productionIdleTimeoutSeconds
     }
     return value
+  }
+
+  function validIdleTimeout(value) {
+    var seconds = Number(value)
+    return isFinite(seconds) && Math.floor(seconds) === seconds
+      && seconds >= minimumIdleTimeoutSeconds && seconds <= maximumIdleTimeoutSeconds
+  }
+
+  function normalizeBarDisplay(value) {
+    var mode = String(value || "off")
+    return mode === "icon" || mode === "icon-today" ? mode : "off"
   }
 
   function log(message) { console.log("[habit] " + message) }
@@ -69,7 +90,7 @@ Item {
   function sourceSummary() { return "idle=" + idle + " locked=" + locked + " suspended=" + suspended + " disabled=" + disabled }
 
   function reconcile(reason) {
-    if (!idleKnown || !lockKnown || resumeReevaluationPending) return
+    if (!settingsLoaded || !idleKnown || !lockKnown || resumeReevaluationPending) return
     var result = ActivityStateMachine.transition(effectiveState, { idle: idle, locked: locked, suspended: suspended, disabled: disabled })
     if (!startupLogged) {
       effectiveState = result.state
@@ -134,6 +155,54 @@ Item {
     })
   }
 
+  function loadSettings(raw) {
+    if (settingsLoaded) return
+    var parsed = ({})
+    try { parsed = JSON.parse(raw || "{}") || ({}) } catch (error) { console.warn("[habit] settings parse failed") }
+    settingsHydrating = true
+    trackingEnabled = parsed.trackingEnabled !== false
+    idleTimeoutSettingSeconds = validIdleTimeout(parsed.idleTimeoutSeconds)
+      ? Number(parsed.idleTimeoutSeconds) : productionIdleTimeoutSeconds
+    barDisplayMode = normalizeBarDisplay(parsed.barDisplayMode)
+    disabled = !trackingEnabled
+    settingsHydrating = false
+    settingsLoaded = true
+    reconcile("settings-loaded")
+  }
+
+  function saveSettings() {
+    if (!settingsLoaded || settingsHydrating) return
+    settingsSaveTimer.restart()
+  }
+
+  function flushSettings() {
+    settingsFile.setText(JSON.stringify({ version: 1, trackingEnabled: trackingEnabled,
+      idleTimeoutSeconds: idleTimeoutSettingSeconds, barDisplayMode: barDisplayMode }, null, 2) + "\n")
+  }
+
+  function setTrackingEnabled(value) {
+    var next = value === true
+    if (trackingEnabled === next) return
+    trackingEnabled = next
+    setDisabled(!next)
+    saveSettings()
+  }
+
+  function setIdleTimeoutSetting(value) {
+    var next = Number(value)
+    if (!validIdleTimeout(next) || idleTimeoutSettingSeconds === next) return false
+    idleTimeoutSettingSeconds = next
+    saveSettings()
+    return true
+  }
+
+  function setBarDisplayMode(value) {
+    var next = normalizeBarDisplay(value)
+    if (barDisplayMode === next) return
+    barDisplayMode = next
+    saveSettings()
+  }
+
   function refreshStorageStats(onRefreshed) {
     if (!storageReady) return
     queueSql("count", ActivityStore.countSql(), function(output) { totalStoredSessions = Number(output.trim() || 0) })
@@ -157,8 +226,53 @@ Item {
     })
   }
 
+  function requestDayDetail(dayStartMs, callback) {
+    if (!storageReady) { callback(emptyDayDetail(dayStartMs)); return }
+    var start = todayStartMsFor(dayStartMs); var end = nextLocalMidnight(start)
+    queueSql("day-sessions", ActivityStore.daySessionsSql(start, end), function(output) {
+      var sessions = []
+      try { sessions = JSON.parse(output.trim() || "[]") } catch (error) {}
+      callback(buildDayDetail(start, end, sessions))
+    })
+  }
+
+  function todayStartMsFor(ms) {
+    var date = new Date(ms); return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+  }
+
+  function emptyDayDetail(start) { return { dayStartMs: start, durationMs: 0, firstStartMs: null, lastEndMs: null, sessionCount: 0, longestDurationMs: 0, sessions: [] } }
+
+  function buildDayDetail(start, end, storedSessions) {
+    var sessions = storedSessions.slice()
+    var now = Date.now()
+    if (activeSessionId && effectiveState === ActivityStateMachine.ACTIVE) {
+      var liveStart = Math.max(activeSessionStartMs, start)
+      var liveEnd = Math.min(now, end)
+      if (liveEnd > liveStart) {
+        var found = false
+        for (var i = 0; i < sessions.length; i++) if (Number(sessions[i].id) === activeSessionId) {
+          sessions[i].end = Math.max(Number(sessions[i].end), liveEnd); found = true; break
+        }
+        if (!found) sessions.push({ id: activeSessionId, start: liveStart, end: liveEnd })
+      }
+    }
+    sessions.sort(function(a, b) { return Number(a.start) - Number(b.start) })
+    var detail = emptyDayDetail(start)
+    detail.sessions = sessions
+    for (var j = 0; j < sessions.length; j++) {
+      var duration = Math.max(0, Number(sessions[j].end) - Number(sessions[j].start))
+      if (!duration) continue
+      detail.durationMs += duration
+      detail.firstStartMs = detail.firstStartMs === null ? Number(sessions[j].start) : Math.min(detail.firstStartMs, Number(sessions[j].start))
+      detail.lastEndMs = detail.lastEndMs === null ? Number(sessions[j].end) : Math.max(detail.lastEndMs, Number(sessions[j].end))
+      detail.sessionCount += 1
+      detail.longestDurationMs = Math.max(detail.longestDurationMs, duration)
+    }
+    return detail
+  }
+
   function syncTracking() {
-    if (!storageReady || !startupLogged) return
+    if (!storageReady || !startupLogged || clearingHistory) return
     if (effectiveState === ActivityStateMachine.ACTIVE && activeSessionId === 0 && !sessionStartPending) beginSession()
     else if (effectiveState !== ActivityStateMachine.ACTIVE && activeSessionId !== 0 && !sessionEndPending) endSession()
   }
@@ -170,6 +284,7 @@ Item {
       sessionStartPending = false
       activeSessionId = Number(output.trim() || 0); activeSessionStartMs = now; activeSessionCheckpointMs = now
       if (!activeSessionId) { failStorage("session-start", "missing id"); return }
+      if (clearingHistory) { endSession(); return }
       refreshStorageStats(); log("session started")
       syncTracking()
     })
@@ -190,7 +305,9 @@ Item {
     sessionEndPending = true
     var id = activeSessionId; var started = activeSessionStartMs; var now = Date.now()
     queueSql("session-end", ActivityStore.endSql(id, started, now), function() {
-      activeSessionId = 0; activeSessionStartMs = 0; activeSessionCheckpointMs = 0; sessionEndPending = false; refreshStorageStats(); log("session ended"); syncTracking()
+      activeSessionId = 0; activeSessionStartMs = 0; activeSessionCheckpointMs = 0; sessionEndPending = false
+      if (clearingHistory) { performClearHistory(); return }
+      refreshStorageStats(); log("session ended"); syncTracking()
     })
   }
 
@@ -224,6 +341,24 @@ Item {
     if (disabled === (value === true)) return
     disabled = value === true
     reconcile(disabled ? "tracking-disabled" : "tracking-enabled")
+  }
+
+  function clearHistory() {
+    if (!storageReady || clearingHistory) return false
+    clearingHistory = true
+    if (sessionStartPending) { historyClearPending = true; return true }
+    if (activeSessionId && !sessionEndPending) { endSession(); return true }
+    performClearHistory()
+    return true
+  }
+
+  function performClearHistory() {
+    queueSql("clear-history", ActivityStore.clearHistorySql(), function() {
+      todayStoredDurationMs = 0; totalStoredDurationMs = 0; totalStoredSessions = 0
+      clearingHistory = false; historyClearPending = false; activityDataRevision += 1
+      log("history cleared")
+      syncTracking()
+    })
   }
 
   function requestLockProbe(reason) {
@@ -275,6 +410,17 @@ Item {
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
   Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
   Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE; onTriggered: root.displayNowMs = Date.now() }
+  Timer { id: settingsSaveTimer; interval: 200; repeat: false; onTriggered: root.flushSettings() }
+
+  FileView {
+    id: settingsFile
+    path: root.settingsPath
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+    onLoaded: root.loadSettings(text())
+    onLoadFailed: root.loadSettings("")
+  }
 
   Process {
     id: dbProcess
@@ -338,10 +484,10 @@ Item {
     target: "habit"
     function status(): string {
       root.displayNowMs = Date.now()
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, trackingEnabled: root.trackingEnabled, idleTimeoutSeconds: root.idleTimeoutSeconds, barDisplayMode: root.barDisplayMode, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
-    function disable(): void { root.setDisabled(true) }
-    function enable(): void { root.setDisabled(false) }
+    function disable(): void { root.setTrackingEnabled(false) }
+    function enable(): void { root.setTrackingEnabled(true) }
   }
 
   Component.onCompleted: {
@@ -353,12 +499,13 @@ Item {
     requestLockProbe("startup-lock")
     startSuspendListener()
     checkpointTimer.start()
+    settingsFile.reload()
     initializeStorage()
   }
 
   Component.onDestruction: {
     stopping = true
-    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop(); displayTimer.stop()
+    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop(); displayTimer.stop(); settingsSaveTimer.stop()
     lockProbe.running = false; suspendListener.running = false; dbProcess.running = false
     log("service stopping")
   }
