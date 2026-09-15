@@ -328,15 +328,26 @@ Item {
           }
         }
 
-        DayDetail {
+        Flickable {
+          id: detailFlickable
           visible: root.view === "detail"
           width: parent.width
-          dayStartMs: root.selectedDateMs
-          detail: root.dayDetail
-          foreground: root.foreground
-          muted: root.muted
-          accent: root.accent
-          fontFamily: root.fontFamily
+          height: Math.min(detailContent.implicitHeight, Style.space(390))
+          contentWidth: width
+          contentHeight: detailContent.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+
+          DayDetail {
+            id: detailContent
+            width: detailFlickable.width
+            dayStartMs: root.selectedDateMs
+            detail: root.dayDetail
+            foreground: root.foreground
+            muted: root.muted
+            accent: root.accent
+            fontFamily: root.fontFamily
+          }
         }
 
         Settings {
