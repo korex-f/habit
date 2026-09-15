@@ -1,8 +1,10 @@
 # Habit
 
 Habit is a local-first activity tracker for Omarchy. It records only local
-activity-session timestamps and presents a contribution-style heatmap plus the
-last seven calendar days. It has no app tracking or network use.
+activity-session timestamps and presents a contribution-style heatmap, recent
+days, and per-day intervals. It has no app tracking, telemetry, or network
+use. It requires the normal Omarchy environment, including Quickshell,
+`sqlite3`, `dbus-monitor`, and `xdg-open`.
 
 ## Storage
 
@@ -23,11 +25,13 @@ sqlite3 ~/.local/share/omarchy-habit/habit.db \
   'select id, started_at_ms, last_checkpoint_at_ms, ended_at_ms, duration_ms from activity_sessions;'
 ```
 
-## Install for development
+## Install and enable
 
-Install or symlink this directory as `~/.config/omarchy/plugins/io.github.dki.habit`,
+Copy or symlink this directory as `~/.config/omarchy/plugins/io.github.dki.habit`,
 then add `{ "id": "io.github.dki.habit" }` to the top-level `plugins` array in
-`~/.config/omarchy/shell.json`. Omarchy loads the service automatically.
+`~/.config/omarchy/shell.json`. Restart once with `omarchy restart shell`.
+Habit creates its data directory and schema automatically; tracking starts on
+and the bar defaults to Off.
 
 Use a short idle timeout while testing without changing source. Set it in the
 environment that launches Omarchy Shell:
@@ -81,3 +85,37 @@ closes the active session immediately. Turning it back on re-derives the
 effective state from the current idle, lock, and suspend signals; it never
 assumes ACTIVE. The optional bar widget uses the same service as the panel and
 opens or closes Habit when clicked.
+
+To place the optional widget in a bar section once, use the normal registry:
+
+```sh
+omarchy-shell shell putBarWidget io.github.dki.habit '{"section":"right"}'
+```
+
+Choose Icon or Icon + Today in Settings. Off is invisible and uses no bar
+width; changing modes never enables or disables the plugin.
+
+## Clear History and uninstall
+
+Clear History requires confirmation. Confirming ends any current session,
+deletes all recorded sessions, resets aggregates, and starts a new session if
+tracking remains active. It never resets settings.
+
+Removing or disabling Habit does not delete `~/.local/share/omarchy-habit/`.
+To remove the plugin, remove its `shell.json` entry and plugin directory. To
+permanently erase all Habit data as well, run:
+
+```sh
+rm -rf ~/.local/share/omarchy-habit/
+```
+
+This deletes the database, SQLite sidecars, and settings and cannot be undone.
+
+## Known limitations
+
+- Lock state uses the public `omarchy-shell lock isLocked` probe every three
+  seconds because the native lock surface does not update logind `LockedHint`
+  on the verified target.
+- A crash can lose up to 60 seconds since the last checkpoint; Habit never
+  invents that unverified time.
+- Activity means computer interaction, not productivity or application use.
