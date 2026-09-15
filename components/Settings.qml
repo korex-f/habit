@@ -1,6 +1,5 @@
 import QtQuick
 import qs.Commons
-import "../js/DateUtils.js" as DateUtils
 
 Item {
   id: root
@@ -23,7 +22,9 @@ Item {
   implicitHeight: content.implicitHeight
 
   component Label: Text { color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.4 }
-  component Row: Item { width: content.width; height: 28 }
+  // Do not call this `Row`: the bar-mode selector below intentionally uses
+  // QtQuick.Row for its spacing/layout behavior.
+  component SettingRow: Item { width: content.width; height: 28 }
 
   Column {
     id: content
@@ -31,21 +32,21 @@ Item {
     spacing: Style.space(12)
 
     Label { text: "TRACKING" }
-    Row {
+    SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Track activity"; color: root.foreground; font.family: root.fontFamily }
       Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: root.trackingEnabled ? "On" : "Off"; color: root.trackingEnabled ? root.accent : root.muted; font.family: root.fontFamily }
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.trackingToggled() }
     }
 
     Label { text: "IDLE THRESHOLD" }
-    Row {
+    SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Idle threshold"; color: root.foreground; font.family: root.fontFamily }
       Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: Math.floor(root.idleTimeoutSeconds / 60) + " minutes"; color: root.foreground; font.family: root.fontFamily }
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.idleTimeoutRequested(root.idleTimeoutSeconds === 300 ? 600 : 300) }
     }
 
     Label { text: "BAR" }
-    Row {
+    SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Display"; color: root.foreground; font.family: root.fontFamily }
       Row {
         anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 8
@@ -61,11 +62,11 @@ Item {
     }
 
     Label { text: "DATA" }
-    Row {
+    SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Open data directory"; color: root.foreground; font.family: root.fontFamily }
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.openDataRequested() }
     }
-    Row {
+    SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Clear history"; color: root.foreground; font.family: root.fontFamily }
       MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.clearHistoryRequested() }
     }
