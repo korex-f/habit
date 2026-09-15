@@ -9,7 +9,10 @@ BarWidget {
   id: root
   moduleName: "io.github.dki.habit"
 
-  readonly property var habitService: bar && bar.serviceFor ? bar.serviceFor(moduleName) : null
+  // BarWidget receives a restricted Bar facade. Its service-capable shell
+  // facade is deliberately nested under `bar.shell`.
+  readonly property var habitService: bar && bar.shell && typeof bar.shell.serviceFor === "function"
+    ? bar.shell.serviceFor(moduleName) : null
   readonly property string displayMode: habitService ? habitService.barDisplayMode : "off"
   readonly property bool shown: displayMode !== "off"
 
@@ -34,6 +37,10 @@ BarWidget {
   MouseArea {
     anchors.fill: parent
     cursorShape: Qt.PointingHandCursor
-    onClicked: if (root.bar && root.bar.toggle) root.bar.toggle(root.moduleName, "{}")
+    onClicked: {
+      if (!root.bar || !root.bar.shell) return
+      if (typeof root.bar.shell.toggle === "function") root.bar.shell.toggle(root.moduleName, "{}")
+      else if (typeof root.bar.shell.summon === "function") root.bar.shell.summon(root.moduleName, "{}")
+    }
   }
 }
