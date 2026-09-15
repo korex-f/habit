@@ -15,7 +15,10 @@ Item {
   readonly property int lockPollIntervalMs: 3000
   readonly property bool debugEnabled: Quickshell.env("HABIT_DEBUG") === "1"
   readonly property string sessionId: Quickshell.env("XDG_SESSION_ID")
-  readonly property string dataDir: Quickshell.env("HOME") + "/.local/share/omarchy-habit"
+  // Development/test-only override for an isolated service fixture. Production
+  // keeps the established user-data path when HABIT_DATA_DIR is unset.
+  readonly property string dataDir: String(Quickshell.env("HABIT_DATA_DIR") || "").trim()
+    || Quickshell.env("HOME") + "/.local/share/omarchy-habit"
   readonly property string databasePath: dataDir + "/habit.db"
   readonly property string settingsPath: dataDir + "/settings.json"
 

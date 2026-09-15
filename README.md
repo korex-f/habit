@@ -48,6 +48,14 @@ Hyprland before restarting the shell; a prefix on `omarchy restart shell`
 alone is not inherited because Omarchy launches its shell through Hyprland.
 `HABIT_DEBUG=1` enables raw signal logs.
 
+For an isolated development or release-test fixture, `HABIT_DATA_DIR` redirects
+only Habit’s `habit.db` and `settings.json`. It is unset in normal use and is
+not a user setting:
+
+```sh
+HABIT_DATA_DIR=/tmp/habit-fixture quickshell -p /usr/share/omarchy/shell
+```
+
 ## Milestone 1 behavior
 
 The service derives one visible state with this precedence:
