@@ -140,7 +140,6 @@ Item {
     var start = todayStartMs(); var end = nextLocalMidnight(start)
     queueSql("today-total", ActivityStore.totalBetweenSql(start, end), function(output) {
       todayStoredDurationMs = Number(output.trim() || 0)
-      if (onTodayUpdated) onTodayUpdated()
     })
     queueSql("total-duration", ActivityStore.totalDurationSql(), function(output) {
       totalStoredDurationMs = Number(output.trim() || 0)
