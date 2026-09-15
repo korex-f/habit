@@ -29,6 +29,8 @@ Item {
   property string barDisplayMode: "off"
   property bool settingsLoaded: false
   property bool settingsHydrating: false
+  property bool settingsWritePending: false
+  property string settingsHealth: "starting"
   property bool clearingHistory: false
   property bool historyClearPending: false
   property bool idleKnown: false
@@ -149,16 +151,25 @@ Item {
     queueDb("mkdir", ["mkdir", "-p", dataDir], function() {
       queueSql("schema", ActivityStore.schemaSql(), function() {
         queueSql("recovery", ActivityStore.recoverSql(), function() {
-          storageReady = true; storageHealth = "ok"; refreshStorageStats(); syncTracking(); log("storage ready")
+          storageReady = true; storageHealth = "ok"
+          if (settingsWritePending) {
+            settingsWritePending = false
+            flushSettings()
+          }
+          refreshStorageStats(); syncTracking(); log("storage ready")
         })
       })
     })
   }
 
-  function loadSettings(raw) {
+  function loadSettings(raw, shouldRepair) {
     if (settingsLoaded) return
     var parsed = ({})
-    try { parsed = JSON.parse(raw || "{}") || ({}) } catch (error) { console.warn("[habit] settings parse failed") }
+    var valid = true
+    try { parsed = JSON.parse(raw || "{}") || ({}) } catch (error) {
+      valid = false
+      console.warn("[habit] settings parse failed; using defaults")
+    }
     settingsHydrating = true
     trackingEnabled = parsed.trackingEnabled !== false
     idleTimeoutSettingSeconds = validIdleTimeout(parsed.idleTimeoutSeconds)
@@ -167,6 +178,8 @@ Item {
     disabled = !trackingEnabled
     settingsHydrating = false
     settingsLoaded = true
+    settingsHealth = valid && !shouldRepair ? "ok" : "defaults pending write"
+    settingsWritePending = shouldRepair === true || !valid
     reconcile("settings-loaded")
   }
 
@@ -422,8 +435,11 @@ Item {
     watchChanges: false
     atomicWrites: true
     printErrors: false
-    onLoaded: root.loadSettings(text())
-    onLoadFailed: root.loadSettings("")
+    onLoaded: root.loadSettings(text(), false)
+    onLoadFailed: function(error) {
+      console.warn("[habit] settings load failed; using defaults: " + error)
+      root.loadSettings("", true)
+    }
   }
 
   Process {
@@ -488,7 +504,7 @@ Item {
     target: "habit"
     function status(): string {
       root.displayNowMs = Date.now()
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, trackingEnabled: root.trackingEnabled, idleTimeoutSeconds: root.idleTimeoutSeconds, barDisplayMode: root.barDisplayMode, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, trackingEnabled: root.trackingEnabled, idleTimeoutSeconds: root.idleTimeoutSeconds, barDisplayMode: root.barDisplayMode, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, settingsHealth: root.settingsHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
     function disable(): void { root.setTrackingEnabled(false) }
     function enable(): void { root.setTrackingEnabled(true) }
