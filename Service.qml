@@ -62,6 +62,7 @@ Item {
   property var dbQueue: []
   property var dbCurrent: null
   property double displayNowMs: Date.now()
+  property bool panelOpen: false
   readonly property double todayDurationMs: todayStoredDurationMs + liveTodayDelta()
   readonly property double totalDurationMs: totalStoredDurationMs + liveTodayDelta()
 
@@ -214,6 +215,13 @@ Item {
     if (barDisplayMode === next) return
     barDisplayMode = next
     saveSettings()
+  }
+
+  // The UI needs a live clock only while a panel is visible or the bar shows
+  // today's duration. Tracking itself remains independent of either surface.
+  function setPanelOpen(value) {
+    panelOpen = value === true
+    if (panelOpen) displayNowMs = Date.now()
   }
 
   function refreshStorageStats(onRefreshed) {
@@ -426,7 +434,7 @@ Item {
   Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; onTriggered: root.requestLockProbe("lock-poll") }
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
   Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
-  Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE; onTriggered: root.displayNowMs = Date.now() }
+  Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE && (root.panelOpen || root.barDisplayMode === "icon-today"); onTriggered: root.displayNowMs = Date.now() }
   Timer { id: settingsSaveTimer; interval: 200; repeat: false; onTriggered: root.flushSettings() }
 
   FileView {
@@ -504,7 +512,7 @@ Item {
     target: "habit"
     function status(): string {
       root.displayNowMs = Date.now()
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, trackingEnabled: root.trackingEnabled, idleTimeoutSeconds: root.idleTimeoutSeconds, barDisplayMode: root.barDisplayMode, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, settingsHealth: root.settingsHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, trackingEnabled: root.trackingEnabled, idleTimeoutSeconds: root.idleTimeoutSeconds, barDisplayMode: root.barDisplayMode, panelOpen: root.panelOpen, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, settingsHealth: root.settingsHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
     function disable(): void { root.setTrackingEnabled(false) }
     function enable(): void { root.setTrackingEnabled(true) }

@@ -102,6 +102,7 @@ Item {
     resetSelectionToToday() // v0.1 intentionally starts each opening at today.
     view = "main"
     opened = true
+    if (service && typeof service.setPanelOpen === "function") service.setPanelOpen(true)
     Qt.callLater(function() {
       if (!root.opened) return
       root.reloadTotals()
@@ -110,7 +111,10 @@ Item {
   }
 
   function isOpen() { return opened }
-  function close() { opened = false }
+  function close() {
+    opened = false
+    if (service && typeof service.setPanelOpen === "function") service.setPanelOpen(false)
+  }
 
   function dismiss() {
     if (shell && typeof shell.hide === "function")
@@ -123,7 +127,10 @@ Item {
     function onActivityDataRevisionChanged() { if (root.opened) root.reloadTotals() }
   }
 
-  onServiceChanged: if (opened) reloadTotals()
+  onServiceChanged: {
+    if (opened && service && typeof service.setPanelOpen === "function") service.setPanelOpen(true)
+    if (opened) reloadTotals()
+  }
   onVisibleRangeStartMsChanged: if (opened) reloadTotals()
 
   // The service tracks local days dynamically. Keep a long-open panel on the
