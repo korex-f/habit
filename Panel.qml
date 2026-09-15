@@ -79,6 +79,7 @@ Item {
   }
 
   function openDetail() { view = "detail"; loadDayDetail() }
+  function openSettings() { view = "settings" }
 
   function reloadTotals() {
     if (!service || !opened || typeof service.requestDailyTotals !== "function") return
@@ -179,12 +180,14 @@ Item {
             return
           }
           if (event.key === Qt.Key_Escape) {
-            if (root.view !== "main") root.view = "main"
+            if (root.view === "confirm") root.view = "settings"
+            else if (root.view !== "main") root.view = "main"
             else root.dismiss()
             event.accepted = true
             return
           }
           var key = String(event.text || "").toLowerCase()
+          if (root.view === "settings" || root.view === "help" || root.view === "confirm") return
           if (root.view === "detail") {
             if (key === "h") root.moveSelection(-1)
             else if (key === "l") root.moveSelection(1)
@@ -193,7 +196,9 @@ Item {
             event.accepted = true
             return
           }
-          if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.openDetail()
+          if (key === "s") root.openSettings()
+          else if (key === "?") root.view = "help"
+          else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.openDetail()
           else if (key === "j") root.moveSelection(1)
           else if (key === "k") root.moveSelection(-1)
           else if (key === "h") root.moveSelection(-7)
@@ -239,6 +244,12 @@ Item {
             foreground: root.foreground
             fontFamily: root.fontFamily
             onClicked: root.dismiss()
+          }
+          PanelActionButton {
+            anchors.right: closeButton.left; anchors.rightMargin: 4; anchors.verticalCenter: parent.verticalCenter
+            visible: root.view === "main"
+            iconText: "⚙"; tooltipText: "Settings  ( s )"; foreground: root.foreground; fontFamily: root.fontFamily
+            onClicked: root.openSettings()
           }
         }
 
@@ -326,6 +337,41 @@ Item {
           muted: root.muted
           accent: root.accent
           fontFamily: root.fontFamily
+        }
+
+        Settings {
+          visible: root.view === "settings"
+          width: parent.width
+          trackingEnabled: root.service ? root.service.trackingEnabled : true
+          idleTimeoutSeconds: root.service ? root.service.idleTimeoutSettingSeconds : 300
+          barDisplayMode: root.service ? root.service.barDisplayMode : "off"
+          version: root.manifest && root.manifest.version ? root.manifest.version : "0.1.0"
+          foreground: root.foreground; muted: root.muted; accent: root.accent; fontFamily: root.fontFamily
+          onTrackingToggled: if (root.service) root.service.setTrackingEnabled(!root.service.trackingEnabled)
+          onIdleTimeoutRequested: function(seconds) { if (root.service) root.service.setIdleTimeoutSetting(seconds) }
+          onBarModeRequested: function(mode) { if (root.service) root.service.setBarDisplayMode(mode) }
+          onOpenDataRequested: if (root.service) root.service.openDataDirectory()
+          onClearHistoryRequested: root.view = "confirm"
+        }
+
+        Column {
+          visible: root.view === "help"
+          width: parent.width; spacing: 8
+          Text { text: "SHORTCUTS"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.5 }
+          Text { text: "j/k    day\nh/l    week\ng      today\nEnter  inspect\ns      settings\n?      shortcuts\nq      close"; color: root.foreground; font.family: root.fontFamily; lineHeight: 1.35 }
+          Text { text: "Esc back"; color: root.muted; font.family: root.fontFamily }
+        }
+
+        Column {
+          visible: root.view === "confirm"
+          width: parent.width; spacing: Style.space(12)
+          Text { text: "CLEAR ALL HABIT HISTORY?"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.heading; font.bold: true }
+          Text { text: "This permanently deletes recorded\nactivity sessions."; color: root.muted; font.family: root.fontFamily }
+          Row {
+            spacing: Style.space(18)
+            Text { text: "Cancel"; color: root.muted; font.family: root.fontFamily; MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.view = "settings" } }
+            Text { text: "Clear history"; color: root.accent; font.family: root.fontFamily; MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { if (root.service) root.service.clearHistory(); root.view = "main" } } }
+          }
         }
       }
     }

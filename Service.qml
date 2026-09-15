@@ -361,6 +361,10 @@ Item {
     })
   }
 
+  function openDataDirectory() {
+    Quickshell.execDetached(["xdg-open", dataDir])
+  }
+
   function requestLockProbe(reason) {
     lockProbeReason = reason || "lock-probe"
     if (lockProbe.running) { lockProbePending = true; return }
