@@ -6,10 +6,13 @@ last seven calendar days. It has no app tracking or network use.
 
 ## Storage
 
-Habit stores SQLite data at `~/.local/share/omarchy-habit/habit.db`. Each row
-contains only session timestamps and duration. WAL mode with `synchronous=FULL`
-is used, and an active session is checkpointed every 60 seconds. On startup an
-unfinished session is closed at its last checkpoint, never at the restart time.
+Habit stores SQLite data at `~/.local/share/omarchy-habit/habit.db` and its
+small local configuration at `~/.local/share/omarchy-habit/settings.json`.
+Each history row contains only session timestamps and duration. WAL mode with
+`synchronous=FULL` is used, and an active session is checkpointed every 60
+seconds. On startup an unfinished session is closed at its last checkpoint,
+never at the restart time. Clearing history deletes only activity sessions;
+it preserves settings.
 
 The service exposes `omarchy-shell habit status`, including state, current
 session start, today's and all-time active milliseconds, stored-session count,
@@ -33,11 +36,13 @@ environment that launches Omarchy Shell:
 HABIT_IDLE_TIMEOUT=10 quickshell -p /path/to/habit/Service.qml
 ```
 
-The value must be a whole number from 1 to 86400 seconds; otherwise Habit uses
-the production default of 300 seconds. For the installed plugin, arrange for
-`HABIT_IDLE_TIMEOUT` to be inherited by Hyprland before restarting the shell;
-a prefix on `omarchy restart shell` alone is not inherited because Omarchy
-launches its shell through Hyprland. `HABIT_DEBUG=1` enables raw signal logs.
+The value must be a whole number from 30 to 3600 seconds; otherwise Habit uses
+the persisted idle setting (five minutes by default). This environment override
+takes precedence over the setting and is intended only for development. For
+the installed plugin, arrange for `HABIT_IDLE_TIMEOUT` to be inherited by
+Hyprland before restarting the shell; a prefix on `omarchy restart shell`
+alone is not inherited because Omarchy launches its shell through Hyprland.
+`HABIT_DEBUG=1` enables raw signal logs.
 
 ## Milestone 1 behavior
 
@@ -65,4 +70,14 @@ omarchy-shell shell toggle io.github.dki.habit '{}'
 
 The panel starts each opening with today selected. `j`/`k` move one local
 calendar day, `h`/`l` move one local calendar week, and `g` returns to today.
-Selection never moves into the future. `Esc` and `q` close the panel.
+Selection never moves into the future. `Enter` opens the selected date;
+`s` opens Settings; `?` opens contextual shortcut help. In day detail, `h`,
+`l`, and `g` navigate dates, `Esc` returns to the main view, and `q` closes
+Habit. In Settings, `Esc` returns to the main view and `q` closes Habit.
+
+Settings persist tracking on/off state, a one-to-sixty-minute idle threshold
+(five minutes by default), and the bar display mode (`Off`, `Icon`, or `Icon + Today`). Turning tracking off
+closes the active session immediately. Turning it back on re-derives the
+effective state from the current idle, lock, and suspend signals; it never
+assumes ACTIVE. The optional bar widget uses the same service as the panel and
+opens or closes Habit when clicked.

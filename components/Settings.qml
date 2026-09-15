@@ -41,8 +41,18 @@ Item {
     Label { text: "IDLE THRESHOLD" }
     SettingRow {
       Text { anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter; text: "Idle threshold"; color: root.foreground; font.family: root.fontFamily }
-      Text { anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: Math.floor(root.idleTimeoutSeconds / 60) + " minutes"; color: root.foreground; font.family: root.fontFamily }
-      MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.idleTimeoutRequested(root.idleTimeoutSeconds === 300 ? 600 : 300) }
+      Row {
+        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 10
+        Text {
+          text: "−"; color: root.muted; font.family: root.fontFamily
+          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.idleTimeoutRequested(Math.max(60, root.idleTimeoutSeconds - 60)) }
+        }
+        Text { text: Math.floor(root.idleTimeoutSeconds / 60) + " minutes"; color: root.foreground; font.family: root.fontFamily }
+        Text {
+          text: "+"; color: root.accent; font.family: root.fontFamily
+          MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.idleTimeoutRequested(Math.min(3600, root.idleTimeoutSeconds + 60)) }
+        }
+      }
     }
 
     Label { text: "BAR" }
