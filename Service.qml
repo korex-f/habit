@@ -38,6 +38,10 @@ Item {
   property string storageHealth: "starting"
   property int totalStoredSessions: 0
   property double todayStoredDurationMs: 0
+  property double totalStoredDurationMs: 0
+  // Changes only after a durable storage refresh. Panels use this to refresh
+  // historical range data after a checkpoint or completed session.
+  property int activityDataRevision: 0
   property int activeSessionId: 0
   property double activeSessionStartMs: 0
   property double activeSessionCheckpointMs: 0
@@ -47,6 +51,7 @@ Item {
   property var dbCurrent: null
   property double displayNowMs: Date.now()
   readonly property double todayDurationMs: todayStoredDurationMs + liveTodayDelta()
+  readonly property double totalDurationMs: totalStoredDurationMs + liveTodayDelta()
 
   function configuredIdleTimeout() {
     var raw = String(Quickshell.env("HABIT_IDLE_TIMEOUT") || "").trim()
@@ -129,13 +134,18 @@ Item {
     })
   }
 
-  function refreshStorageStats(onTodayUpdated) {
+  function refreshStorageStats(onRefreshed) {
     if (!storageReady) return
     queueSql("count", ActivityStore.countSql(), function(output) { totalStoredSessions = Number(output.trim() || 0) })
     var start = todayStartMs(); var end = nextLocalMidnight(start)
     queueSql("today-total", ActivityStore.totalBetweenSql(start, end), function(output) {
       todayStoredDurationMs = Number(output.trim() || 0)
       if (onTodayUpdated) onTodayUpdated()
+    })
+    queueSql("total-duration", ActivityStore.totalDurationSql(), function(output) {
+      totalStoredDurationMs = Number(output.trim() || 0)
+      activityDataRevision += 1
+      if (onRefreshed) onRefreshed()
     })
   }
 
@@ -329,7 +339,7 @@ Item {
     target: "habit"
     function status(): string {
       root.displayNowMs = Date.now()
-      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
+      return JSON.stringify({ state: root.effectiveState, idle: root.idle, locked: root.locked, suspended: root.suspended, disabled: root.disabled, currentActiveSessionStart: root.activeSessionId ? root.activeSessionStartMs : null, todayActiveDurationMs: root.todayDurationMs, totalActiveDurationMs: root.totalDurationMs, totalStoredSessions: root.totalStoredSessions, storageHealth: root.storageHealth, databasePath: root.databasePath, lockDetection: "omarchy-shell-poll" })
     }
     function disable(): void { root.setDisabled(true) }
     function enable(): void { root.setDisabled(false) }
