@@ -1,0 +1,39 @@
+import QtQuick
+import qs.Commons
+import qs.Ui
+import "js/DateUtils.js" as DateUtils
+
+// Optional bar surface. It reads only the long-lived service; no database or
+// tracking logic lives in the widget.
+BarWidget {
+  id: root
+  moduleName: "io.github.dki.habit"
+
+  readonly property var habitService: bar && bar.serviceFor ? bar.serviceFor(moduleName) : null
+  readonly property string displayMode: habitService ? habitService.barDisplayMode : "off"
+  readonly property bool shown: displayMode !== "off"
+
+  visible: shown
+  implicitWidth: shown ? row.implicitWidth + Style.space(12) : 0
+  implicitHeight: barSize
+
+  Row {
+    id: row
+    anchors.centerIn: parent
+    spacing: Style.space(5)
+    Text { text: "󰔟"; color: root.bar ? root.bar.barForeground : Color.foreground; font.family: root.bar ? root.bar.fontFamily : Style.font.family; font.pixelSize: Style.font.body }
+    Text {
+      visible: root.displayMode === "icon-today"
+      text: DateUtils.formatDuration(root.habitService ? root.habitService.todayDurationMs : 0)
+      color: root.bar ? root.bar.barForeground : Color.foreground
+      font.family: root.bar ? root.bar.fontFamily : Style.font.family
+      font.pixelSize: Style.font.body
+    }
+  }
+
+  MouseArea {
+    anchors.fill: parent
+    cursorShape: Qt.PointingHandCursor
+    onClicked: if (root.bar && root.bar.toggle) root.bar.toggle(root.moduleName, "{}")
+  }
+}
