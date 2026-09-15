@@ -16,6 +16,8 @@ Item {
   property var shell: null
   property var manifest: null
   property bool opened: false
+  property string view: "main"
+  property var dayDetail: ({ dayStartMs: 0, durationMs: 0, firstStartMs: null, lastEndMs: null, sessionCount: 0, longestDurationMs: 0, sessions: [] })
   property int requestSerial: 0
   property var dayTotals: ({})
   property double selectedDateMs: DateUtils.localDayStart(Date.now())
@@ -63,9 +65,20 @@ Item {
     selectedDateMs = Math.min(normalized, todayStartMs)
     ensureSelectionVisible()
     reloadTotals()
+    if (view === "detail") loadDayDetail()
   }
 
   function moveSelection(days) { selectDate(DateUtils.addLocalDays(selectedDateMs, days)) }
+
+  function loadDayDetail() {
+    if (!service || typeof service.requestDayDetail !== "function") return
+    var requestedDay = selectedDateMs
+    service.requestDayDetail(requestedDay, function(detail) {
+      if (root.view === "detail" && root.selectedDateMs === requestedDay) root.dayDetail = detail
+    })
+  }
+
+  function openDetail() { view = "detail"; loadDayDetail() }
 
   function reloadTotals() {
     if (!service || !opened || typeof service.requestDailyTotals !== "function") return
@@ -86,6 +99,7 @@ Item {
 
   function open(payloadJson) {
     resetSelectionToToday() // v0.1 intentionally starts each opening at today.
+    view = "main"
     opened = true
     Qt.callLater(function() {
       if (!root.opened) return
@@ -159,13 +173,28 @@ Item {
         focus: true
         Keys.priority: Keys.BeforeItem
         Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Escape || event.text === "q" || event.text === "Q") {
+          if (event.text === "q" || event.text === "Q") {
             root.dismiss()
             event.accepted = true
             return
           }
+          if (event.key === Qt.Key_Escape) {
+            if (root.view !== "main") root.view = "main"
+            else root.dismiss()
+            event.accepted = true
+            return
+          }
           var key = String(event.text || "").toLowerCase()
-          if (key === "j") root.moveSelection(1)
+          if (root.view === "detail") {
+            if (key === "h") root.moveSelection(-1)
+            else if (key === "l") root.moveSelection(1)
+            else if (key === "g") root.selectDate(root.todayStartMs)
+            else return
+            event.accepted = true
+            return
+          }
+          if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) root.openDetail()
+          else if (key === "j") root.moveSelection(1)
           else if (key === "k") root.moveSelection(-1)
           else if (key === "h") root.moveSelection(-7)
           else if (key === "l") root.moveSelection(7)
@@ -215,6 +244,7 @@ Item {
 
         Heatmap {
           id: heatmap
+          visible: root.view === "main"
           anchors.horizontalCenter: parent.horizontalCenter
           rangeStartMs: root.visibleRangeStartMs
           selectedDateMs: root.selectedDateMs
@@ -230,6 +260,7 @@ Item {
         }
 
         Item {
+          visible: root.view === "main"
           width: parent.width
           height: legend.implicitHeight
 
@@ -252,6 +283,7 @@ Item {
         }
 
         Text {
+          visible: root.view === "main"
           text: "LAST 7 DAYS"
           color: root.muted
           font.family: root.fontFamily
@@ -261,6 +293,7 @@ Item {
         }
 
         Column {
+          visible: root.view === "main"
           width: parent.width
           spacing: 2
 
@@ -282,6 +315,17 @@ Item {
               onDaySelected: function(dayStartMs) { root.selectDate(dayStartMs) }
             }
           }
+        }
+
+        DayDetail {
+          visible: root.view === "detail"
+          width: parent.width
+          dayStartMs: root.selectedDateMs
+          detail: root.dayDetail
+          foreground: root.foreground
+          muted: root.muted
+          accent: root.accent
+          fontFamily: root.fontFamily
         }
       }
     }
