@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.dki.habit",
   "name": "Habit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "author": "Idris Akorede Ibrahim",
   "description": "Local-only active-session tracker for Omarchy.",
   "license": "MIT",

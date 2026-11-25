@@ -3,7 +3,7 @@
 All notable changes to Habit are listed here. Versions follow
 [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.2.0 — 2026-11-25
 
 ### Added
 - `habit today` and `habit week`: totals from the local database in the
