@@ -68,6 +68,10 @@ Item {
   // Set when the idle monitor fires: the session then ends at the last input
   // rather than when the idle threshold elapsed.
   property bool endAtLastInput: false
+  // Wall time of the last checkpoint tick. The checkpoint Timer runs on a
+  // monotonic clock, so comparing wall deltas between ticks detects clock steps.
+  property double lastCheckpointTickMs: 0
+  readonly property int clockStepToleranceMs: 30000
   property var dbQueue: []
   property var dbCurrent: null
   property double displayNowMs: Date.now()
@@ -314,10 +318,27 @@ Item {
       sessionStartPending = false
       activeSessionId = Number(output.trim() || 0); activeSessionStartMs = now; activeSessionCheckpointMs = now
       if (!activeSessionId) { failStorage("session-start", "missing id"); return }
+      // Align checkpoint ticks with the session so their wall deltas are exact.
+      lastCheckpointTickMs = now; checkpointTimer.restart()
       if (clearingHistory) { endSession(); return }
       refreshStorageStats(); log("session started")
       syncTracking()
     })
+  }
+
+  function handleCheckpointTick() {
+    var now = Date.now()
+    var stepEnd = ActivityStateMachine.clockStepEnd(lastCheckpointTickMs, now, checkpointTimer.interval, clockStepToleranceMs)
+    lastCheckpointTickMs = now
+    if (stepEnd !== null && activeSessionId && !sessionEndPending && !sessionStartPending
+        && effectiveState === ActivityStateMachine.ACTIVE) {
+      // Close the session on the old timeline; syncTracking then starts a new
+      // one on the new timeline, so no session spans the step.
+      log("clock step detected; splitting session")
+      endSession(stepEnd)
+      return
+    }
+    checkpointSession()
   }
 
   function checkpointSession() {
@@ -331,11 +352,25 @@ Item {
     })
   }
 
-  function endSession() {
+  // `endAtMs` is given when the caller already knows the trustworthy end (a
+  // detected clock step); otherwise the end is derived from the current time.
+  function endSession(endAtMs) {
     sessionEndPending = true
     var id = activeSessionId; var started = activeSessionStartMs; var now = Date.now()
-    if (endAtLastInput && effectiveState === ActivityStateMachine.IDLE)
-      now = ActivityStateMachine.idleSessionEnd(started, now, idleTimeoutSeconds * 1000)
+    if (endAtMs !== undefined) now = Math.max(started, endAtMs)
+    else {
+      if (endAtLastInput && effectiveState === ActivityStateMachine.IDLE)
+        now = ActivityStateMachine.idleSessionEnd(started, now, idleTimeoutSeconds * 1000)
+      // Fewer than one interval of monotonic time has passed since the last
+      // tick, so a wall delta outside that window means the clock stepped.
+      // End at the last trustworthy tick instead of on the new timeline.
+      var sinceTick = now - lastCheckpointTickMs
+      if (lastCheckpointTickMs && (sinceTick < -clockStepToleranceMs
+          || sinceTick > checkpointTimer.interval + clockStepToleranceMs)) {
+        log("clock step detected at session end")
+        now = Math.max(started, lastCheckpointTickMs)
+      }
+    }
     endAtLastInput = false
     queueSql("session-end", ActivityStore.endSql(id, started, now), function() {
       activeSessionId = 0; activeSessionStartMs = 0; activeSessionCheckpointMs = 0; sessionEndPending = false
@@ -472,7 +507,7 @@ Item {
   // probe process is not spawned then.
   Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; running: !root.disabled && !root.stopping; onTriggered: root.requestLockProbe("lock-poll") }
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
-  Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
+  Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.handleCheckpointTick() }
   Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE && (root.panelOpen || root.barDisplayMode === "icon-today"); onTriggered: root.displayNowMs = Date.now() }
   // Qt timers do not advance during suspend, so resume also re-arms this.
   Timer { id: dayRolloverTimer; repeat: false; onTriggered: root.handleDayRollover() }
@@ -537,6 +572,8 @@ Item {
           // fresh IPC probe below decides the post-resume derived state.
           root.resumeReevaluationPending = true
           root.reevaluationReason = "resume"
+          // Timers did not run during suspend; the next tick is not comparable.
+          root.lastCheckpointTickMs = 0
           root.setSuspended(false, "resume")
           root.requestLockProbe("resume")
           root.setIdle(idleMonitor.isIdle, "resume")

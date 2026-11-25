@@ -41,6 +41,16 @@ function idleSessionEnd(sessionStartMs, nowMs, idleTimeoutMs) {
   return Math.min(nowMs, Math.max(sessionStartMs, lastInput))
 }
 
+// Qt timers run on a monotonic clock, so a repeating timer's wall-clock delta
+// reveals clock steps (manual changes, large NTP corrections). Returns null when
+// the wall clock advanced as expected, otherwise the last trustworthy wall time
+// on the old timeline: the previous tick plus one interval.
+function clockStepEnd(lastTickMs, nowMs, intervalMs, toleranceMs) {
+  if (!lastTickMs) return null
+  if (Math.abs((nowMs - lastTickMs) - intervalMs) <= toleranceMs) return null
+  return lastTickMs + intervalMs
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition, idleSessionEnd: idleSessionEnd }
+  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition, idleSessionEnd: idleSessionEnd, clockStepEnd: clockStepEnd }
 }

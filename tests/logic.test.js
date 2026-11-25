@@ -22,6 +22,14 @@ assert.equal(Machine.idleSessionEnd(0, 30 * min, 5 * min), 25 * min)
 assert.equal(Machine.idleSessionEnd(28 * min, 30 * min, 5 * min), 28 * min) // never before start
 assert.equal(Machine.idleSessionEnd(0, 30 * min, 0), 30 * min)
 
+// Clock steps: a tick whose wall delta is far from the interval ends the
+// session at the previous tick plus one interval.
+assert.equal(Machine.clockStepEnd(0, 60_000, 60_000, 30_000), null)            // no previous tick
+assert.equal(Machine.clockStepEnd(1_000, 61_000, 60_000, 30_000), null)        // on time
+assert.equal(Machine.clockStepEnd(1_000, 81_000, 60_000, 30_000), null)        // late, within tolerance
+assert.equal(Machine.clockStepEnd(1_000, 3_601_000, 60_000, 30_000), 61_000)   // clock jumped forward
+assert.equal(Machine.clockStepEnd(10_000_000, 5_000, 60_000, 30_000), 10_060_000) // clock jumped back
+
 // Durations.
 assert.equal(Dates.formatDuration(0), "No activity")
 assert.equal(Dates.formatDuration(42_000), "<1m")
