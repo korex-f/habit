@@ -9,7 +9,7 @@ license=('MIT')
 depends=('omarchy' 'quickshell' 'sqlite' 'dbus' 'xdg-utils' 'jq')
 install=habit.install
 source=("habit-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('7826e7bcf79989c3499e8d5a6dec1ed11a89fed3bb6e0b16e16106993d9f8a3f')
 
 package() {
   cd "habit-$pkgver"
