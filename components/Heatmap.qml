@@ -53,7 +53,10 @@ Item {
         required property int index
         height: root.cellSize
         verticalAlignment: Text.AlignVCenter
-        text: index % 2 === 1 ? root.weekdayLabel(index) : ""
+        // Hide via opacity, not empty text: positioners skip zero-width items,
+        // which would collapse the column and misalign the labels.
+        text: root.weekdayLabel(index)
+        opacity: index % 2 === 1 ? 1 : 0
         color: root.muted
         font.family: root.fontFamily
         font.pixelSize: root.labelPixelSize
