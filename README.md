@@ -27,17 +27,19 @@ sqlite3 ~/.local/share/omarchy-habit/habit.db \
 
 ## Install and enable
 
-Install from the AUR, then enable it for your user (not as root):
+Install the package from the Omarchy package repository (submission pending;
+until it lands, use the git install below), then enable it for your user (not
+as root):
 
 ```sh
-omarchy pkg aur add omarchy-habit
-omarchy-habit install
+omarchy pkg add habit
+habit install
 ```
 
-The package puts the plugin in `/usr/share/omarchy-habit/plugin`, and
-`omarchy-habit install` links it into `~/.config/omarchy/plugins` and enables
+The package puts the plugin in `/usr/share/habit/plugin`, and
+`habit install` links it into `~/.config/omarchy/plugins` and enables
 it, since Omarchy only discovers third-party plugins there. Package upgrades
-apply after `omarchy restart shell`. `omarchy-habit uninstall` removes the link
+apply after `omarchy restart shell`. `habit uninstall` removes the link
 and keeps your activity data.
 
 Alternatively, install straight from git with the Omarchy plugin manager:
@@ -137,8 +139,8 @@ deletes all recorded sessions, resets aggregates, and starts a new session if
 tracking remains active. It never resets settings.
 
 Removing or disabling Habit does not delete `~/.local/share/omarchy-habit/`.
-To remove the plugin, run `omarchy-habit uninstall` and then
-`omarchy pkg drop omarchy-habit` for the package install, or
+To remove the plugin, run `habit uninstall` and then
+`omarchy pkg drop habit` for the package install, or
 `omarchy plugin remove io.github.dki.habit` for a git install. To
 permanently erase all Habit data as well, run:
 

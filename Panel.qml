@@ -460,7 +460,7 @@ Item {
           idleTimeoutSeconds: root.service ? root.service.idleTimeoutSettingSeconds : 300
           barDisplayMode: root.service ? root.service.barDisplayMode : "off"
           focusIndex: root.settingsIndex
-          version: root.manifest && root.manifest.version ? root.manifest.version : "0.1.0"
+          version: root.manifest && root.manifest.version ? root.manifest.version : "0.1.1"
           foreground: root.foreground; muted: root.muted; accent: root.accent; fontFamily: root.fontFamily
           onTrackingToggled: if (root.service) root.service.setTrackingEnabled(!root.service.trackingEnabled)
           onIdleTimeoutAdjusted: function(deltaMinutes) { root.adjustIdleTimeout(deltaMinutes) }

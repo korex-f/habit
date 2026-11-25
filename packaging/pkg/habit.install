@@ -1,6 +1,6 @@
 post_install() {
   echo "==> Enable Habit for your user (run as your user, not root):"
-  echo "      omarchy-habit install"
+  echo "      habit install"
   echo "==> Then open it with: omarchy-shell shell toggle io.github.dki.habit '{}'"
 }
 

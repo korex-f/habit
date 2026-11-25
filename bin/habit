@@ -8,18 +8,18 @@
 set -euo pipefail
 
 ID="io.github.dki.habit"
-SOURCE="${OMARCHY_HABIT_SOURCE:-/usr/share/omarchy-habit/plugin}"
+SOURCE="${HABIT_PLUGIN_SOURCE:-/usr/share/habit/plugin}"
 PLUGINS_DIR="$HOME/.config/omarchy/plugins"
 TARGET="$PLUGINS_DIR/$ID"
 
 fail() {
-  echo "omarchy-habit: $*" >&2
+  echo "habit: $*" >&2
   exit 1
 }
 
 usage() {
   cat <<USAGE
-Usage: omarchy-habit <command>
+Usage: habit <command>
 
 Commands:
   install    Link the packaged plugin into ~/.config/omarchy/plugins and enable it
