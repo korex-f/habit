@@ -20,12 +20,23 @@ Item {
   property var dayDetail: ({ dayStartMs: 0, durationMs: 0, firstStartMs: null, lastEndMs: null, sessionCount: 0, longestDurationMs: 0, sessions: [] })
   property int requestSerial: 0
   property var dayTotals: ({})
-  property double selectedDateMs: DateUtils.localDayStart(Date.now())
-  property double visibleRangeStartMs: DateUtils.addLocalDays(DateUtils.localDayStart(Date.now()), -90)
+  // Settings and confirm-dialog keyboard focus. Settings rows are, in order:
+  // tracking, idle threshold, bar display, open data directory, clear history.
+  readonly property int settingsRowCount: 5
+  readonly property var barModes: ["off", "icon", "icon-today"]
+  property int settingsIndex: 0
+  property int confirmIndex: 0
 
   readonly property int heatmapWeeks: 13
   readonly property int heatmapDays: heatmapWeeks * 7
+  // Heatmap rows are fixed weekdays, starting from the locale's first day.
+  readonly property int firstDayOfWeek: Qt.locale().firstDayOfWeek
+  // The panel is keepLoaded and outlives calendar days; refreshToday() keeps
+  // this current on every open and at local midnight.
   property double todayStartMs: DateUtils.localDayStart(Date.now())
+  property double selectedDateMs: todayStartMs
+  // Always the first day of a week; the last column contains today.
+  property double visibleRangeStartMs: latestRangeStart()
   readonly property color background: Color.popups.background
   readonly property color foreground: Color.foreground
   readonly property color muted: Color.muted
@@ -42,21 +53,30 @@ Item {
     return Number(dayTotals[DateUtils.dateKey(dayStartMs)] || 0)
   }
 
-  function resetSelectionToToday() {
-    selectedDateMs = todayStartMs
-    visibleRangeStartMs = DateUtils.addLocalDays(todayStartMs, -(heatmapDays - 1))
+  function refreshToday() { todayStartMs = DateUtils.localDayStart(Date.now()) }
+
+  function latestRangeStart() {
+    return DateUtils.addLocalDays(DateUtils.weekStart(todayStartMs, firstDayOfWeek), -7 * (heatmapWeeks - 1))
   }
 
+  function resetSelectionToToday() {
+    refreshToday()
+    selectedDateMs = todayStartMs
+    visibleRangeStartMs = latestRangeStart()
+  }
+
+  // The range moves in whole weeks so each row keeps its weekday.
   function ensureSelectionVisible() {
+    var selectedWeek = DateUtils.weekStart(selectedDateMs, firstDayOfWeek)
     var rangeEndMs = DateUtils.addLocalDays(visibleRangeStartMs, heatmapDays - 1)
     if (selectedDateMs < visibleRangeStartMs)
-      visibleRangeStartMs = selectedDateMs
+      visibleRangeStartMs = selectedWeek
     else if (selectedDateMs > rangeEndMs)
-      visibleRangeStartMs = DateUtils.addLocalDays(selectedDateMs, -(heatmapDays - 1))
+      visibleRangeStartMs = DateUtils.addLocalDays(selectedWeek, -7 * (heatmapWeeks - 1))
 
-    // Future selection is blocked, so a range ending after today can always
-    // slide forward to its normal present-day endpoint.
-    var latestStart = DateUtils.addLocalDays(todayStartMs, -(heatmapDays - 1))
+    // Future selection is blocked, so the range never needs to end after
+    // the week containing today.
+    var latestStart = latestRangeStart()
     if (visibleRangeStartMs > latestStart) visibleRangeStartMs = latestStart
   }
 
@@ -79,7 +99,41 @@ Item {
   }
 
   function openDetail() { view = "detail"; loadDayDetail() }
-  function openSettings() { view = "settings" }
+  function openSettings() { settingsIndex = 0; view = "settings" }
+  function openConfirm() { confirmIndex = 0; view = "confirm" } // Cancel is the default.
+
+  function adjustIdleTimeout(deltaMinutes) {
+    if (!service) return
+    var seconds = service.idleTimeoutSettingSeconds + deltaMinutes * 60
+    service.setIdleTimeoutSetting(Math.max(60, Math.min(3600, seconds)))
+  }
+
+  function cycleBarMode(step) {
+    if (!service) return
+    var i = barModes.indexOf(service.barDisplayMode)
+    service.setBarDisplayMode(barModes[(Math.max(0, i) + step + barModes.length) % barModes.length])
+  }
+
+  function adjustSetting(step) {
+    if (!service) return
+    if (settingsIndex === 0) service.setTrackingEnabled(step > 0)
+    else if (settingsIndex === 1) adjustIdleTimeout(step)
+    else if (settingsIndex === 2) cycleBarMode(step)
+  }
+
+  function activateSetting() {
+    if (!service) return
+    if (settingsIndex === 0) service.setTrackingEnabled(!service.trackingEnabled)
+    else if (settingsIndex === 1) adjustIdleTimeout(1)
+    else if (settingsIndex === 2) cycleBarMode(1)
+    else if (settingsIndex === 3) service.openDataDirectory()
+    else if (settingsIndex === 4) openConfirm()
+  }
+
+  function confirmClearHistory() {
+    if (service) service.clearHistory()
+    view = "main"
+  }
 
   function reloadTotals() {
     if (!service || !opened || typeof service.requestDailyTotals !== "function") return
@@ -141,7 +195,10 @@ Item {
     running: root.opened
     onTriggered: {
       var currentDay = DateUtils.localDayStart(Date.now())
-      if (currentDay !== root.todayStartMs) root.resetSelectionToToday()
+      if (currentDay === root.todayStartMs) return
+      root.resetSelectionToToday()
+      root.reloadTotals()
+      if (root.view === "detail") root.loadDayDetail()
     }
   }
 
@@ -194,7 +251,29 @@ Item {
             return
           }
           var key = String(event.text || "").toLowerCase()
-          if (root.view === "settings" || root.view === "help" || root.view === "confirm") return
+          var enter = event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Space
+          if (root.view === "help") return
+          if (root.view === "settings") {
+            if (key === "j" || event.key === Qt.Key_Down) root.settingsIndex = Math.min(root.settingsRowCount - 1, root.settingsIndex + 1)
+            else if (key === "k" || event.key === Qt.Key_Up) root.settingsIndex = Math.max(0, root.settingsIndex - 1)
+            else if (key === "h" || event.key === Qt.Key_Left) root.adjustSetting(-1)
+            else if (key === "l" || event.key === Qt.Key_Right) root.adjustSetting(1)
+            else if (enter) root.activateSetting()
+            else return
+            event.accepted = true
+            return
+          }
+          if (root.view === "confirm") {
+            if (key === "h" || key === "l" || event.key === Qt.Key_Left || event.key === Qt.Key_Right || event.key === Qt.Key_Tab)
+              root.confirmIndex = root.confirmIndex === 0 ? 1 : 0
+            else if (enter) {
+              if (root.confirmIndex === 1) root.confirmClearHistory()
+              else root.view = "settings"
+            }
+            else return
+            event.accepted = true
+            return
+          }
           if (root.view === "detail") {
             if (key === "h") root.moveSelection(-1)
             else if (key === "l") root.moveSelection(1)
@@ -267,6 +346,7 @@ Item {
           rangeStartMs: root.visibleRangeStartMs
           selectedDateMs: root.selectedDateMs
           todayStartMs: root.todayStartMs
+          firstDayOfWeek: root.firstDayOfWeek
           liveTodayDurationMs: root.service ? root.service.todayDurationMs : 0
           totals: root.dayTotals
           foreground: root.foreground
@@ -274,6 +354,7 @@ Item {
           muted: root.muted
           cellSize: Style.space(12)
           cellSpacing: Math.max(2, Style.space(3))
+          fontFamily: root.fontFamily
           onDaySelected: function(dayStartMs) { root.selectDate(dayStartMs) }
         }
 
@@ -363,13 +444,15 @@ Item {
           trackingEnabled: root.service ? root.service.trackingEnabled : true
           idleTimeoutSeconds: root.service ? root.service.idleTimeoutSettingSeconds : 300
           barDisplayMode: root.service ? root.service.barDisplayMode : "off"
+          focusIndex: root.settingsIndex
           version: root.manifest && root.manifest.version ? root.manifest.version : "0.1.0"
           foreground: root.foreground; muted: root.muted; accent: root.accent; fontFamily: root.fontFamily
           onTrackingToggled: if (root.service) root.service.setTrackingEnabled(!root.service.trackingEnabled)
-          onIdleTimeoutRequested: function(seconds) { if (root.service) root.service.setIdleTimeoutSetting(seconds) }
+          onIdleTimeoutAdjusted: function(deltaMinutes) { root.adjustIdleTimeout(deltaMinutes) }
           onBarModeRequested: function(mode) { if (root.service) root.service.setBarDisplayMode(mode) }
           onOpenDataRequested: if (root.service) root.service.openDataDirectory()
-          onClearHistoryRequested: root.view = "confirm"
+          onClearHistoryRequested: root.openConfirm()
+          onRowClicked: function(index) { root.settingsIndex = index }
         }
 
         Column {
@@ -377,6 +460,8 @@ Item {
           width: parent.width; spacing: 8
           Text { text: "SHORTCUTS"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.5 }
           Text { text: "j/k    day\nh/l    week\ng      today\nEnter  inspect\ns      settings\n?      shortcuts\nq      close"; color: root.foreground; font.family: root.fontFamily; lineHeight: 1.35 }
+          Text { text: "IN SETTINGS"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true; font.letterSpacing: 1.5 }
+          Text { text: "j/k    move\nh/l    change\nEnter  toggle / open"; color: root.foreground; font.family: root.fontFamily; lineHeight: 1.35 }
           Text { text: "Esc back"; color: root.muted; font.family: root.fontFamily }
         }
 
@@ -386,10 +471,38 @@ Item {
           Text { text: "CLEAR ALL HABIT HISTORY?"; color: root.foreground; font.family: root.fontFamily; font.pixelSize: Style.font.heading; font.bold: true }
           Text { text: "This permanently deletes recorded\nactivity sessions."; color: root.muted; font.family: root.fontFamily }
           Row {
-            spacing: Style.space(18)
-            Text { text: "Cancel"; color: root.muted; font.family: root.fontFamily; MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.view = "settings" } }
-            Text { text: "Clear history"; color: root.accent; font.family: root.fontFamily; MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { if (root.service) root.service.clearHistory(); root.view = "main" } } }
+            spacing: Style.space(10)
+            Repeater {
+              model: [{ label: "Cancel", destructive: false }, { label: "Clear history", destructive: true }]
+              Rectangle {
+                required property var modelData
+                required property int index
+                readonly property bool focused: root.confirmIndex === index
+                width: buttonLabel.implicitWidth + Style.space(20)
+                height: buttonLabel.implicitHeight + Style.space(10)
+                radius: 3
+                color: focused ? Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.10) : "transparent"
+                border.width: focused ? 1 : 0
+                border.color: Qt.rgba(root.foreground.r, root.foreground.g, root.foreground.b, 0.35)
+                Text {
+                  id: buttonLabel
+                  anchors.centerIn: parent
+                  text: modelData.label
+                  color: modelData.destructive ? root.accent : (parent.focused ? root.foreground : root.muted)
+                  font.family: root.fontFamily
+                }
+                MouseArea {
+                  anchors.fill: parent
+                  cursorShape: Qt.PointingHandCursor
+                  onClicked: {
+                    if (modelData.destructive) root.confirmClearHistory()
+                    else root.view = "settings"
+                  }
+                }
+              }
+            }
           }
+          Text { text: "h/l choose · Enter confirm · Esc cancel"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall }
         }
       }
     }

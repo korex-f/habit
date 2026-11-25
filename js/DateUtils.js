@@ -16,6 +16,14 @@ function addLocalDays(dayStartMs, days) {
 
 function dateKey(dayStartMs) { return String(localDayStart(dayStartMs)) }
 
+// Local start of the calendar week containing `ms`. `firstDayOfWeek` uses
+// Date#getDay numbering (0 = Sunday), matching QML's Locale.firstDayOfWeek.
+function weekStart(ms, firstDayOfWeek) {
+  var first = Number(firstDayOfWeek) || 0
+  var day = localDayStart(ms)
+  return addLocalDays(day, -((new Date(day).getDay() - first + 7) % 7))
+}
+
 function activityLevel(durationMs) {
   var value = Math.max(0, Number(durationMs) || 0)
   if (value === 0) return 0
@@ -49,6 +57,6 @@ function shortDate(dayStartMs) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  HOUR_MS, localDayStart, addLocalDays, dateKey, activityLevel,
+  HOUR_MS, localDayStart, addLocalDays, dateKey, weekStart, activityLevel,
   formatDuration, weekdayDate, shortDate
 }

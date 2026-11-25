@@ -8,6 +8,7 @@ Rectangle {
   required property double durationMs
   required property bool selected
   required property bool today
+  property bool future: false
   required property color foreground
   required property color accent
   required property color muted
@@ -23,11 +24,13 @@ Rectangle {
   width: cellSize
   height: cellSize
   radius: Math.max(1, Math.floor(cellSize / 4))
-  color: fill
+  // Future days keep their grid slot so rows stay aligned to weekdays.
+  color: future ? "transparent" : fill
   border.width: selected ? Math.max(1, Math.floor(cellSize / 6)) : (today ? 1 : 0)
   border.color: selected ? foreground : Qt.rgba(foreground.r, foreground.g, foreground.b, 0.55)
 
   MouseArea {
+    enabled: !root.future
     anchors.fill: parent
     hoverEnabled: true
     cursorShape: Qt.PointingHandCursor
