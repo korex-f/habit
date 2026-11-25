@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Links the packaged Habit plugin into the current user's Omarchy plugin
+# directory and enables it. Run as your user, not root: Omarchy only discovers
+# third-party plugins under ~/.config/omarchy/plugins, which a system package
+# must not write to.
+
+set -euo pipefail
+
+ID="io.github.dki.habit"
+SOURCE="${OMARCHY_HABIT_SOURCE:-/usr/share/omarchy-habit/plugin}"
+PLUGINS_DIR="$HOME/.config/omarchy/plugins"
+TARGET="$PLUGINS_DIR/$ID"
+
+fail() {
+  echo "omarchy-habit: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<USAGE
+Usage: omarchy-habit <command>
+
+Commands:
+  install    Link the packaged plugin into ~/.config/omarchy/plugins and enable it
+  uninstall  Disable and unlink the plugin (activity data is kept)
+  status     Print the running service's status as JSON
+
+Activity data lives in ~/.local/share/omarchy-habit/ and is never removed by
+these commands or by uninstalling the package.
+USAGE
+}
+
+shell_running() {
+  omarchy-shell shell ping >/dev/null 2>&1
+}
+
+install_plugin() {
+  (( EUID != 0 )) || fail "run as your user, not root"
+  [[ -f $SOURCE/manifest.json ]] || fail "packaged plugin not found at $SOURCE"
+
+  if [[ -L $TARGET ]]; then
+    if [[ $(readlink -f "$TARGET") != $(readlink -f "$SOURCE") ]]; then
+      fail "$TARGET links to $(readlink "$TARGET"); remove it first with: omarchy plugin remove $ID"
+    fi
+    echo "Habit is already linked."
+  elif [[ -e $TARGET ]]; then
+    fail "$TARGET already exists (for example from 'omarchy plugin add'); remove it first with: omarchy plugin remove $ID"
+  else
+    mkdir -p "$PLUGINS_DIR"
+    ln -s "$SOURCE" "$TARGET"
+    echo "Linked $TARGET -> $SOURCE"
+  fi
+
+  if ! shell_running; then
+    echo "Omarchy shell is not running. Start it, then run: omarchy plugin enable $ID"
+    return 0
+  fi
+  omarchy-shell shell rescanPlugins >/dev/null
+  # The shell discovers the plugin asynchronously after a rescan.
+  for (( attempt = 0; attempt < 40; attempt++ )); do
+    omarchy-plugin-list --json | jq -e --arg id "$ID" 'any(.[]; .id == $id)' >/dev/null && break
+    sleep 0.05
+  done
+  omarchy-plugin-enable "$ID"
+  echo "Habit is enabled. Open it with: omarchy-shell shell toggle $ID '{}'"
+}
+
+uninstall_plugin() {
+  (( EUID != 0 )) || fail "run as your user, not root"
+  if [[ ! -e $TARGET && ! -L $TARGET ]]; then
+    echo "Habit is not installed for this user."
+    return 0
+  fi
+  [[ -L $TARGET ]] || fail "$TARGET is not a packaged link; remove it with: omarchy plugin remove $ID"
+  omarchy-plugin-remove "$ID" --yes
+  echo "Activity data was kept in ~/.local/share/omarchy-habit/"
+}
+
+case "${1:-}" in
+  install) install_plugin ;;
+  uninstall | remove) uninstall_plugin ;;
+  status) omarchy-shell habit status ;;
+  -h | --help | help) usage ;;
+  "") usage; exit 1 ;;
+  *) usage >&2; exit 1 ;;
+esac

@@ -27,11 +27,27 @@ sqlite3 ~/.local/share/omarchy-habit/habit.db \
 
 ## Install and enable
 
-Copy or symlink this directory as `~/.config/omarchy/plugins/io.github.dki.habit`,
-then add `{ "id": "io.github.dki.habit" }` to the top-level `plugins` array in
-`~/.config/omarchy/shell.json`. Restart once with `omarchy restart shell`.
-Habit creates its data directory and schema automatically; tracking starts on
-and the bar defaults to Off.
+Install from the AUR, then enable it for your user (not as root):
+
+```sh
+omarchy pkg aur add omarchy-habit
+omarchy-habit install
+```
+
+The package puts the plugin in `/usr/share/omarchy-habit/plugin`, and
+`omarchy-habit install` links it into `~/.config/omarchy/plugins` and enables
+it, since Omarchy only discovers third-party plugins there. Package upgrades
+apply after `omarchy restart shell`. `omarchy-habit uninstall` removes the link
+and keeps your activity data.
+
+Alternatively, install straight from git with the Omarchy plugin manager:
+
+```sh
+omarchy plugin add https://github.com/korex-f/habit.git --enable
+```
+
+Use one method or the other, not both. Habit creates its data directory and
+schema automatically; tracking starts on and the bar defaults to Off.
 
 Use a short idle timeout while testing without changing source. Set it in the
 environment that launches Omarchy Shell:
@@ -121,7 +137,9 @@ deletes all recorded sessions, resets aggregates, and starts a new session if
 tracking remains active. It never resets settings.
 
 Removing or disabling Habit does not delete `~/.local/share/omarchy-habit/`.
-To remove the plugin, remove its `shell.json` entry and plugin directory. To
+To remove the plugin, run `omarchy-habit uninstall` and then
+`omarchy pkg drop omarchy-habit` for the package install, or
+`omarchy plugin remove io.github.dki.habit` for a git install. To
 permanently erase all Habit data as well, run:
 
 ```sh
