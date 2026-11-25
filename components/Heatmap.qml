@@ -89,6 +89,7 @@ Item {
         accent: root.accent
         muted: root.muted
         cellSize: root.cellSize
+        fontFamily: root.fontFamily
         onDaySelected: function(dayStartMs) { root.daySelected(dayStartMs) }
       }
     }

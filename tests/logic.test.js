@@ -34,6 +34,13 @@ assert.equal(Dates.formatDuration(NaN), "No activity")
 const h = Dates.HOUR_MS
 assert.deepEqual([0, 1, 2 * h, 4 * h, 8 * h].map(Dates.activityLevel), [0, 1, 2, 3, 4])
 
+// Legend and cells share one color formula: muted at level 0, accent above.
+const rgba = (r, g, b, a) => [r, g, b, a]
+const accent = { r: 1, g: 0, b: 0 }, muted = { r: 0, g: 0, b: 1 }
+assert.deepEqual(Dates.levelColor(0, accent, muted, rgba), [0, 0, 1, Dates.LEVEL_ALPHA[0]])
+assert.deepEqual(Dates.levelColor(4, accent, muted, rgba), [1, 0, 0, Dates.LEVEL_ALPHA[4]])
+assert.deepEqual(Dates.levelColor(9, accent, muted, rgba), [1, 0, 0, Dates.LEVEL_ALPHA[4]])
+
 // Week alignment uses local calendar days, including across DST.
 const weeks = JSON.parse(execFileSync(process.execPath, ["-e", `
   const d = require(${JSON.stringify(path.join(__dirname, "..", "js", "DateUtils.js"))});

@@ -361,19 +361,34 @@ Item {
         Item {
           visible: root.view === "main"
           width: parent.width
-          height: legend.implicitHeight
+          height: Math.max(legend.implicitHeight, totalLabel.implicitHeight)
 
-          Text {
+          // Swatches use the same colors as the heatmap cells.
+          Row {
             id: legend
             anchors.left: parent.left
-            text: "Less   ░ ▒ ▓ █   More"
-            color: root.muted
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Math.max(2, Style.space(3))
+            Text { text: "Less"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; anchors.verticalCenter: parent.verticalCenter }
+            Item { width: Style.space(4); height: 1 }
+            Repeater {
+              model: 5
+              Rectangle {
+                required property int index
+                anchors.verticalCenter: parent.verticalCenter
+                width: heatmap.cellSize; height: heatmap.cellSize
+                radius: Math.max(1, Math.floor(heatmap.cellSize / 4))
+                color: DateUtils.levelColor(index, root.accent, root.muted, Qt.rgba)
+              }
+            }
+            Item { width: Style.space(4); height: 1 }
+            Text { text: "More"; color: root.muted; font.family: root.fontFamily; font.pixelSize: Style.font.bodySmall; anchors.verticalCenter: parent.verticalCenter }
           }
 
           Text {
+            id: totalLabel
             anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
             text: "Total  " + root.formatDuration(root.service ? root.service.totalDurationMs : 0)
             color: root.foreground
             font.family: root.fontFamily

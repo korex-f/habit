@@ -33,6 +33,16 @@ function activityLevel(durationMs) {
   return 4
 }
 
+// Heatmap fill opacity per level, shared by the cells and the legend. Level 0
+// uses the muted color; levels 1-4 use the theme accent.
+var LEVEL_ALPHA = [0.20, 0.28, 0.45, 0.65, 0.88]
+
+// `rgba` is Qt.rgba in QML; injected so this file stays plain JavaScript.
+function levelColor(level, accent, muted, rgba) {
+  var base = level === 0 ? muted : accent
+  return rgba(base.r, base.g, base.b, LEVEL_ALPHA[Math.max(0, Math.min(4, level))])
+}
+
 function formatDuration(durationMs, zeroLabel) {
   var seconds = Math.floor(Math.max(0, Number(durationMs) || 0) / 1000)
   if (seconds === 0) return zeroLabel || "No activity"
@@ -57,6 +67,6 @@ function shortDate(dayStartMs) {
 }
 
 if (typeof module !== "undefined") module.exports = {
-  HOUR_MS, localDayStart, addLocalDays, dateKey, weekStart, activityLevel,
+  HOUR_MS, LEVEL_ALPHA, localDayStart, addLocalDays, dateKey, weekStart, activityLevel, levelColor,
   formatDuration, weekdayDate, shortDate
 }
