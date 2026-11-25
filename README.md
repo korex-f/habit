@@ -40,7 +40,7 @@ environment that launches Omarchy Shell:
 HABIT_IDLE_TIMEOUT=10 quickshell -p /path/to/habit/Service.qml
 ```
 
-The value must be a whole number from 30 to 3600 seconds; otherwise Habit uses
+The value must be a whole number from 1 to 86400 seconds; otherwise Habit uses
 the persisted idle setting (five minutes by default). This environment override
 takes precedence over the setting and is intended only for development. For
 the installed plugin, arrange for `HABIT_IDLE_TIMEOUT` to be inherited by
@@ -64,7 +64,11 @@ The service derives one visible state with this precedence:
 SUSPENDED > LOCKED > IDLE > ACTIVE
 ```
 
-Idle uses Quickshell's `IdleMonitor` with `respectInhibitors: true`. Suspend is
+Idle uses Quickshell's `IdleMonitor` with `respectInhibitors: true`. The idle
+signal fires once the idle threshold has passed without input, so Habit ends
+the session at the last input (signal time minus the threshold) rather than
+counting the threshold wait as activity. With a five-minute threshold, input
+at 10:24 and the idle signal at 10:29 records a session ending at 10:24. Suspend is
 observed through logind's `PrepareForSleep(bool)` signal. Omarchy's native
 `WlSessionLock` does not update logind's `LockedHint` on the verified target,
 so lock state is read from `omarchy-shell lock isLocked` every three seconds.
@@ -85,7 +89,14 @@ calendar day, `h`/`l` move one local calendar week, and `g` returns to today.
 Selection never moves into the future. `Enter` opens the selected date;
 `s` opens Settings; `?` opens contextual shortcut help. In day detail, `h`,
 `l`, and `g` navigate dates, `Esc` returns to the main view, and `q` closes
-Habit. In Settings, `Esc` returns to the main view and `q` closes Habit.
+Habit. In Settings, `j`/`k` move between rows, `h`/`l` change the focused
+value, `Enter` toggles or opens it, `Esc` returns to the main view, and `q`
+closes Habit. The Clear History confirmation starts on Cancel; `h`/`l` switch
+buttons, `Enter` confirms the focused one, and `Esc` cancels.
+
+The heatmap shows 13 weeks, one column per week and one row per weekday,
+starting from your locale's first day of the week. Days after today in the
+current week stay blank.
 
 Settings persist tracking on/off state, a one-to-sixty-minute idle threshold
 (five minutes by default), and the bar display mode (`Off`, `Icon`, or `Icon + Today`). Turning tracking off
