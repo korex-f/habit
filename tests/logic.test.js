@@ -30,6 +30,13 @@ assert.equal(Machine.clockStepEnd(1_000, 81_000, 60_000, 30_000), null)        /
 assert.equal(Machine.clockStepEnd(1_000, 3_601_000, 60_000, 30_000), 61_000)   // clock jumped forward
 assert.equal(Machine.clockStepEnd(10_000_000, 5_000, 60_000, 30_000), 10_060_000) // clock jumped back
 
+// Status labels; a storage error overrides any state.
+assert.equal(Machine.statusLabel(Machine.ACTIVE, "ok"), "Tracking")
+assert.equal(Machine.statusLabel(Machine.DISABLED, "ok"), "Paused")
+assert.equal(Machine.statusLabel(Machine.LOCKED, "ok"), "Locked")
+assert.equal(Machine.statusLabel(Machine.ACTIVE, "error: session-checkpoint"), "Not saving")
+assert.equal(Machine.statusLabel("", "starting"), "Starting")
+
 // Durations.
 assert.equal(Dates.formatDuration(0), "No activity")
 assert.equal(Dates.formatDuration(42_000), "<1m")

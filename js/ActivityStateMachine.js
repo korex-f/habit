@@ -41,6 +41,15 @@ function idleSessionEnd(sessionStartMs, nowMs, idleTimeoutMs) {
   return Math.min(nowMs, Math.max(sessionStartMs, lastInput))
 }
 
+// One-word state for the panel header and bar tooltip. Failing storage wins:
+// the UI must never imply time is being saved when writes fail (spec §29).
+function statusLabel(state, storageHealth) {
+  var health = String(storageHealth || "")
+  if (health.indexOf("error") === 0) return "Not saving"
+  if (health === "starting" || !state) return "Starting"
+  return { ACTIVE: "Tracking", IDLE: "Idle", LOCKED: "Locked", SUSPENDED: "Suspended", DISABLED: "Paused" }[state] || "Starting"
+}
+
 // Qt timers run on a monotonic clock, so a repeating timer's wall-clock delta
 // reveals clock steps (manual changes, large NTP corrections). Returns null when
 // the wall clock advanced as expected, otherwise the last trustworthy wall time
@@ -52,5 +61,5 @@ function clockStepEnd(lastTickMs, nowMs, intervalMs, toleranceMs) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition, idleSessionEnd: idleSessionEnd, clockStepEnd: clockStepEnd }
+  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition, idleSessionEnd: idleSessionEnd, clockStepEnd: clockStepEnd, statusLabel: statusLabel }
 }

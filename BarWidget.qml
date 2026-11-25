@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "js/DateUtils.js" as DateUtils
+import "js/ActivityStateMachine.js" as ActivityStateMachine
 
 // Optional bar surface. It reads only the long-lived service; no database or
 // tracking logic lives in the widget.
@@ -15,6 +16,11 @@ BarWidget {
     ? bar.shell.serviceFor(moduleName) : null
   readonly property string displayMode: habitService ? habitService.barDisplayMode : "off"
   readonly property bool shown: displayMode !== "off"
+  readonly property string tooltipText: {
+    if (!habitService) return "Habit"
+    var label = ActivityStateMachine.statusLabel(habitService.effectiveState, habitService.storageHealth)
+    return "Habit · " + label + " · " + DateUtils.formatDuration(habitService.todayDurationMs, "0m") + " today"
+  }
 
   visible: shown
   implicitWidth: shown ? row.implicitWidth + Style.space(12) : 0
@@ -37,6 +43,10 @@ BarWidget {
   MouseArea {
     anchors.fill: parent
     cursorShape: Qt.PointingHandCursor
+    hoverEnabled: true
+    // The bar facade owns tooltip placement; older shells may not expose it.
+    onEntered: if (root.bar && typeof root.bar.showTooltip === "function") root.bar.showTooltip(root, root.tooltipText)
+    onExited: if (root.bar && typeof root.bar.hideTooltip === "function") root.bar.hideTooltip(root)
     onClicked: {
       if (!root.bar || !root.bar.shell) return
       if (typeof root.bar.shell.toggle === "function") root.bar.shell.toggle(root.moduleName, "{}")

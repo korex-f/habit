@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Ui
 import "js/DateUtils.js" as DateUtils
+import "js/ActivityStateMachine.js" as ActivityStateMachine
 import "components"
 
 // Main Habit panel. The service is the only source of persisted data; this
@@ -48,6 +49,13 @@ Item {
   readonly property var borderSpec: Border.surfaceSpec("popups", "border", border, Math.max(1, Style.space(2)))
 
   function formatDuration(ms) { return DateUtils.formatDuration(ms) }
+  // "Tracking · 2h 13m today": whether Habit is counting right now, in words.
+  readonly property string statusText: {
+    if (!service) return ""
+    var label = ActivityStateMachine.statusLabel(service.effectiveState, service.storageHealth)
+    var today = service.todayDurationMs
+    return today > 0 ? label + " · " + DateUtils.formatDuration(today) + " today" : label
+  }
   function totalForDay(dayStartMs) {
     if (dayStartMs === todayStartMs) return service ? service.todayDurationMs : 0
     return Number(dayTotals[DateUtils.dateKey(dayStartMs)] || 0)
@@ -319,6 +327,16 @@ Item {
             font.pixelSize: Style.font.caption
             font.bold: true
             font.letterSpacing: 2
+          }
+
+          Text {
+            anchors.left: title.right
+            anchors.leftMargin: Style.space(12)
+            anchors.verticalCenter: parent.verticalCenter
+            text: root.statusText
+            color: root.muted
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.bodySmall
           }
 
           PanelActionButton {
