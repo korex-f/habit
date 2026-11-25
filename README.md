@@ -134,7 +134,8 @@ This deletes the database, SQLite sidecars, and settings and cannot be undone.
 
 - Lock state uses the public `omarchy-shell lock isLocked` probe every three
   seconds because the native lock surface does not update logind `LockedHint`
-  on the verified target.
+  on the verified target. Polling pauses while tracking is off; turning
+  tracking back on probes the lock state before any time is counted.
 - A crash can lose up to 60 seconds since the last checkpoint; Habit never
   invents that unverified time.
 - Activity means computer interaction, not productivity or application use.

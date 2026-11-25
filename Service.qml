@@ -38,7 +38,10 @@ Item {
   property bool historyClearPending: false
   property bool idleKnown: false
   property bool lockKnown: false
+  // Set while a fresh lock probe must decide the state (after resume, or when
+  // tracking is turned back on after lock polling was paused).
   property bool resumeReevaluationPending: false
+  property string reevaluationReason: "resume"
   property bool startupLogged: false
   property bool stopping: false
   // Omarchy's native WlSessionLock does not update logind LockedHint on this
@@ -371,6 +374,15 @@ Item {
   function setDisabled(value) {
     if (disabled === (value === true)) return
     disabled = value === true
+    if (!disabled && startupLogged) {
+      // Lock polling was paused while disabled; the stored lock value may be
+      // stale. Re-derive from a fresh probe instead of assuming ACTIVE.
+      resumeReevaluationPending = true
+      reevaluationReason = "tracking-enabled"
+      reconcile("tracking-enabled")
+      requestLockProbe("tracking-enabled")
+      return
+    }
     reconcile(disabled ? "tracking-disabled" : "tracking-enabled")
   }
 
@@ -438,7 +450,7 @@ Item {
   function finishResumeReevaluation() {
     if (!resumeReevaluationPending) return
     resumeReevaluationPending = false
-    reconcile("resume")
+    reconcile(reevaluationReason)
   }
 
   function startSuspendListener() {
@@ -456,7 +468,9 @@ Item {
   }
 
   Timer { id: initialIdleTimer; interval: 250; repeat: false; onTriggered: root.setIdle(idleMonitor.isIdle, "startup-idle") }
-  Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; onTriggered: root.requestLockProbe("lock-poll") }
+  // Lock state cannot change the derived state while tracking is off, so the
+  // probe process is not spawned then.
+  Timer { id: lockPollTimer; interval: root.lockPollIntervalMs; repeat: true; running: !root.disabled && !root.stopping; onTriggered: root.requestLockProbe("lock-poll") }
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
   Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
   Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE && (root.panelOpen || root.barDisplayMode === "icon-today"); onTriggered: root.displayNowMs = Date.now() }
@@ -522,6 +536,7 @@ Item {
           // Do not expose ACTIVE from a stale pre-suspend lock value. The
           // fresh IPC probe below decides the post-resume derived state.
           root.resumeReevaluationPending = true
+          root.reevaluationReason = "resume"
           root.setSuspended(false, "resume")
           root.requestLockProbe("resume")
           root.setIdle(idleMonitor.isIdle, "resume")
@@ -551,7 +566,6 @@ Item {
     if (idleTimeoutSeconds !== productionIdleTimeoutSeconds) log("idle timeout=" + idleTimeoutSeconds + "s source=HABIT_IDLE_TIMEOUT")
     initialIdleTimer.start()
     log("lock detection=omarchy-shell polling interval=" + (lockPollIntervalMs / 1000) + "s")
-    lockPollTimer.start()
     requestLockProbe("startup-lock")
     startSuspendListener()
     checkpointTimer.start()
