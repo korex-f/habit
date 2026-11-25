@@ -16,6 +16,14 @@ seconds. On startup an unfinished session is closed at its last checkpoint,
 never at the restart time. Clearing history deletes only activity sessions;
 it preserves settings.
 
+The `habit` command prints totals from the local database, with today's value
+taken live from the running service when available:
+
+```sh
+habit today   # today's active time
+habit week    # last seven days with a bar per day, total and average
+```
+
 The service exposes `omarchy-shell habit status`, including state, current
 session start, today's and all-time active milliseconds, stored-session count,
 and storage health. For storage verification, inspect only the local database:
@@ -158,4 +166,8 @@ This deletes the database, SQLite sidecars, and settings and cannot be undone.
   tracking back on probes the lock state before any time is counted.
 - A crash can lose up to 60 seconds since the last checkpoint; Habit never
   invents that unverified time.
+- Durations use the wall clock, checked against Qt's monotonic timers once a
+  minute. When the clock steps (a manual change or a large NTP correction),
+  Habit closes the session at the last trustworthy time and starts a new one,
+  so no session is stretched, shrunk, or negative.
 - Activity means computer interaction, not productivity or application use.

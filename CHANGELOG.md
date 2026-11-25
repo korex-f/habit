@@ -6,9 +6,21 @@ All notable changes to Habit are listed here. Versions follow
 ## Unreleased
 
 ### Added
-- CI on every push and pull request: unit and storage tests, manifest checks
-  matching `omarchy plugin validate`, Qt 6 `qmllint` on all QML, and
-  `shellcheck` on the `habit` installer.
+- `habit today` and `habit week`: totals from the local database in the
+  terminal, with today's value taken live from the running service.
+- The panel header shows whether Habit is counting, e.g.
+  `Tracking · 2h 13m today`, and the bar widget shows the same on hover.
+  Failing storage reads `Not saving`.
+- Marketplace preview image, rendered from sample data.
+- CI on every push and pull request: unit, storage and CLI tests, manifest
+  checks matching `omarchy plugin validate`, Qt 6 `qmllint` on all QML, and
+  `shellcheck` on the `habit` command.
+
+### Fixed
+- Wall-clock steps no longer stretch, shrink, or invert sessions: the session
+  is closed at the last trustworthy time and a new one starts.
+- Sessions with zero duration are no longer stored; existing ones are removed
+  on the next start.
 
 ## 0.1.1 — 2026-11-25
 

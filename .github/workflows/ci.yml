@@ -19,6 +19,7 @@ jobs:
           node tests/logic.test.js
           node tests/store.test.js
           node tests/manifest.test.js
+          node tests/cli.test.js
       # Qt 6's qmllint lives outside PATH on Arch. It fails on syntax errors;
       # unresolved Quickshell/Omarchy imports are only informational here.
       - name: Lint QML

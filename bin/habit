@@ -22,6 +22,8 @@ usage() {
 Usage: habit <command>
 
 Commands:
+  today      Print today's active time
+  week       Print the last seven days with a bar per day, total and average
   install    Link the packaged plugin into ~/.config/omarchy/plugins and enable it
   uninstall  Disable and unlink the plugin (activity data is kept)
   status     Print the running service's status as JSON
@@ -29,6 +31,82 @@ Commands:
 Activity data lives in ~/.local/share/omarchy-habit/ and is never removed by
 these commands or by uninstalling the package.
 USAGE
+}
+
+DATABASE="${HABIT_DATA_DIR:-$HOME/.local/share/omarchy-habit}/habit.db"
+
+# Same rules as DateUtils.formatDuration in the plugin.
+format_duration() {
+  local seconds=$(( $1 / 1000 )) minutes hours
+  (( seconds > 0 )) || { echo "No activity"; return; }
+  minutes=$(( seconds / 60 ))
+  (( minutes > 0 )) || { echo "<1m"; return; }
+  hours=$(( minutes / 60 )); minutes=$(( minutes % 60 ))
+  if (( hours > 0 )); then printf '%dh %02dm\n' "$hours" "$minutes"; else echo "${minutes}m"; fi
+}
+
+# Local midnight, in epoch milliseconds, of the day N days before today.
+# `date` resolves real local midnights, so DST days are 23 or 25 hours long.
+day_start_ms() {
+  echo $(( $(date -d "$(date -d "$1 days ago" +%F) 00:00" +%s) * 1000 ))
+}
+
+# Active milliseconds per local day for the last N days, oldest first. Sessions
+# are clipped to each day, as the panel does, so midnight crossings split.
+daily_totals() {
+  local days=$1 values="" i start end
+  [[ -f $DATABASE ]] || fail "no Habit data at $DATABASE"
+  for (( i = days - 1; i >= 0; i-- )); do
+    start=$(day_start_ms "$i"); end=$(day_start_ms $(( i - 1 )))
+    values+="${values:+,}($start,$end)"
+  done
+  sqlite3 -readonly -batch -noheader "$DATABASE" "WITH days(s,e) AS (VALUES $values)
+    SELECT COALESCE((SELECT SUM(MAX(0,MIN(COALESCE(ended_at_ms,last_checkpoint_at_ms),e)-MAX(started_at_ms,s)))
+      FROM activity_sessions WHERE started_at_ms < e AND COALESCE(ended_at_ms,last_checkpoint_at_ms) > s),0)
+    FROM days ORDER BY s;" || fail "could not read $DATABASE"
+}
+
+# Today's total from the running service when available: the database lags the
+# live session by up to one 60-second checkpoint.
+live_today_ms() {
+  local live
+  local status
+  status=$(omarchy-shell habit status 2>/dev/null) || return 1
+  # Only trust it when the service reads the same database (HABIT_DATA_DIR).
+  [[ $(jq -r '.databasePath // empty' <<<"$status" 2>/dev/null) == "$DATABASE" ]] || return 1
+  live=$(jq -r '.todayActiveDurationMs // empty' <<<"$status" 2>/dev/null)
+  [[ $live =~ ^[0-9]+(\.[0-9]+)?$ ]] && echo "${live%.*}"
+}
+
+print_today() {
+  local total live
+  total=$(daily_totals 1)
+  live=$(live_today_ms) && (( live > total )) && total=$live
+  echo "Today"
+  format_duration "$total"
+}
+
+print_week() {
+  local -a totals
+  local i max=0 total=0 live width bar label
+  mapfile -t totals < <(daily_totals 7)
+  live=$(live_today_ms) && (( live > totals[6] )) && totals[6]=$live
+  for i in "${!totals[@]}"; do
+    (( totals[i] > max )) && max=${totals[i]}
+    total=$(( total + totals[i] ))
+  done
+  for i in "${!totals[@]}"; do
+    width=0
+    (( max > 0 )) && width=$(( (totals[i] * 14 + max / 2) / max ))
+    (( totals[i] > 0 && width == 0 )) && width=1
+    bar=$(printf '%*s' "$width" "" | sed 's/ /█/g')
+    label=$(date -d "$(( 6 - i )) days ago" +%a)
+    # Pad by character count: each block is three bytes, so %-14s would not.
+    printf '%-6s %s%*s %12s\n' "$label" "$bar" $(( 14 - width )) "" "$(format_duration "${totals[i]}")"
+  done
+  echo
+  printf '%-21s %12s\n' "Total" "$(format_duration "$total")"
+  printf '%-21s %12s\n' "Average" "$(format_duration $(( total / 7 )))"
 }
 
 shell_running() {
@@ -78,6 +156,8 @@ uninstall_plugin() {
 }
 
 case "${1:-}" in
+  today) print_today ;;
+  week) print_week ;;
   install) install_plugin ;;
   uninstall | remove) uninstall_plugin ;;
   status) omarchy-shell habit status ;;
