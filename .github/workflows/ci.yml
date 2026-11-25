@@ -19,10 +19,10 @@ jobs:
           node tests/logic.test.js
           node tests/store.test.js
           node tests/manifest.test.js
-      # Service.qml is skipped: qmllint exits 255 on it with no diagnostics
-      # (likely its typed IpcHandler functions). Remove once that is resolved.
+      # Qt 6's qmllint lives outside PATH on Arch. It fails on syntax errors;
+      # unresolved Quickshell/Omarchy imports are only informational here.
       - name: Lint QML
-        run: for f in Panel.qml BarWidget.qml components/*.qml; do qmllint "$f"; done
+        run: for f in *.qml components/*.qml; do /usr/lib/qt6/bin/qmllint "$f"; done
       - name: Lint installer
         run: |
           bash -n bin/habit
