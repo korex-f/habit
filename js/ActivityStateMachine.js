@@ -34,6 +34,13 @@ function transition(previous, input) {
   return { state: state, changed: previous !== state, sources: value }
 }
 
+// The idle signal fires `idleTimeoutMs` after the last user input, so that is
+// the true end of activity. Never end before the session began or after now.
+function idleSessionEnd(sessionStartMs, nowMs, idleTimeoutMs) {
+  var lastInput = nowMs - Math.max(0, Number(idleTimeoutMs) || 0)
+  return Math.min(nowMs, Math.max(sessionStartMs, lastInput))
+}
+
 if (typeof module !== "undefined") {
-  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition }
+  module.exports = { ACTIVE: ACTIVE, IDLE: IDLE, LOCKED: LOCKED, SUSPENDED: SUSPENDED, DISABLED: DISABLED, sources: sources, derive: derive, transition: transition, idleSessionEnd: idleSessionEnd }
 }

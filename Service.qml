@@ -62,6 +62,9 @@ Item {
   property double activeSessionCheckpointMs: 0
   property bool sessionStartPending: false
   property bool sessionEndPending: false
+  // Set when the idle monitor fires: the session then ends at the last input
+  // rather than when the idle threshold elapsed.
+  property bool endAtLastInput: false
   property var dbQueue: []
   property var dbCurrent: null
   property double displayNowMs: Date.now()
@@ -328,6 +331,9 @@ Item {
   function endSession() {
     sessionEndPending = true
     var id = activeSessionId; var started = activeSessionStartMs; var now = Date.now()
+    if (endAtLastInput && effectiveState === ActivityStateMachine.IDLE)
+      now = ActivityStateMachine.idleSessionEnd(started, now, idleTimeoutSeconds * 1000)
+    endAtLastInput = false
     queueSql("session-end", ActivityStore.endSql(id, started, now), function() {
       activeSessionId = 0; activeSessionStartMs = 0; activeSessionCheckpointMs = 0; sessionEndPending = false
       if (clearingHistory) { performClearHistory(); return }
@@ -340,6 +346,7 @@ Item {
     if (idle === next && idleKnown) return
     idle = next
     idleKnown = true
+    endAtLastInput = next && reason === "idle-timeout"
     debug("idle=" + idle + " reason=" + reason)
     reconcile(reason)
   }
@@ -383,6 +390,21 @@ Item {
       log("history cleared")
       syncTracking()
     })
+  }
+
+  // Today's stored total is only re-read on session writes. Refresh it when the
+  // local day changes so an idle or disabled tracker never shows yesterday's
+  // total as today's.
+  function scheduleDayRollover() {
+    var now = Date.now()
+    dayRolloverTimer.interval = Math.max(1000, nextLocalMidnight(now) - now + 1000)
+    dayRolloverTimer.restart()
+  }
+
+  function handleDayRollover() {
+    displayNowMs = Date.now()
+    refreshStorageStats()
+    scheduleDayRollover()
   }
 
   function openDataDirectory() {
@@ -438,6 +460,8 @@ Item {
   Timer { id: suspendListenerRestart; interval: 5000; repeat: false; onTriggered: root.startSuspendListener() }
   Timer { id: checkpointTimer; interval: 60000; repeat: true; onTriggered: root.checkpointSession() }
   Timer { id: displayTimer; interval: 1000; repeat: true; running: root.effectiveState === ActivityStateMachine.ACTIVE && (root.panelOpen || root.barDisplayMode === "icon-today"); onTriggered: root.displayNowMs = Date.now() }
+  // Qt timers do not advance during suspend, so resume also re-arms this.
+  Timer { id: dayRolloverTimer; repeat: false; onTriggered: root.handleDayRollover() }
   Timer { id: settingsSaveTimer; interval: 200; repeat: false; onTriggered: root.flushSettings() }
 
   FileView {
@@ -501,6 +525,7 @@ Item {
           root.setSuspended(false, "resume")
           root.requestLockProbe("resume")
           root.setIdle(idleMonitor.isIdle, "resume")
+          root.handleDayRollover()
         }
       }
     }
@@ -530,13 +555,14 @@ Item {
     requestLockProbe("startup-lock")
     startSuspendListener()
     checkpointTimer.start()
+    scheduleDayRollover()
     settingsFile.reload()
     initializeStorage()
   }
 
   Component.onDestruction: {
     stopping = true
-    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop(); displayTimer.stop(); settingsSaveTimer.stop()
+    initialIdleTimer.stop(); lockPollTimer.stop(); suspendListenerRestart.stop(); checkpointTimer.stop(); dayRolloverTimer.stop(); displayTimer.stop(); settingsSaveTimer.stop()
     lockProbe.running = false; suspendListener.running = false; dbProcess.running = false
     log("service stopping")
   }
