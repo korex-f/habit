@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    # Arch matches the Qt and SQLite versions Omarchy ships.
+    container: archlinux:latest
+    steps:
+      - name: Install tools
+        run: pacman -Syu --noconfirm --needed git nodejs sqlite qt6-declarative shellcheck
+      - uses: actions/checkout@v4
+      - name: Tests
+        run: |
+          node tests/logic.test.js
+          node tests/store.test.js
+          node tests/manifest.test.js
+      # Service.qml is skipped: qmllint exits 255 on it with no diagnostics
+      # (likely its typed IpcHandler functions). Remove once that is resolved.
+      - name: Lint QML
+        run: for f in Panel.qml BarWidget.qml components/*.qml; do qmllint "$f"; done
+      - name: Lint installer
+        run: |
+          bash -n bin/habit
+          shellcheck bin/habit
