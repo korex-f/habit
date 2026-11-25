@@ -14,9 +14,11 @@ function schemaSql() {
 function recoverSql() {
   // A missing end means the process died. Only time through the last durable
   // checkpoint is trustworthy; never credit the interval after it.
+  // A session with nothing trustworthy after its start is dropped.
   return "UPDATE activity_sessions SET ended_at_ms=last_checkpoint_at_ms, "
     + "duration_ms=MAX(0,last_checkpoint_at_ms-started_at_ms) "
-    + "WHERE ended_at_ms IS NULL;"
+    + "WHERE ended_at_ms IS NULL; "
+    + "DELETE FROM activity_sessions WHERE ended_at_ms IS NOT NULL AND duration_ms=0;"
 }
 
 function startSql(now) {
@@ -29,9 +31,13 @@ function checkpointSql(id, started, now) {
     + ",duration_ms=MAX(0," + now + "-" + started + ") WHERE id=" + id + ";"
 }
 
+// A session that ends with no duration (e.g. idle ended it at its own start,
+// after an unlock with no input) records nothing, so it is deleted rather than
+// kept as an empty row that inflates the session count.
 function endSql(id, started, now) {
   return "UPDATE activity_sessions SET last_checkpoint_at_ms=" + now
-    + ",ended_at_ms=" + now + ",duration_ms=MAX(0," + now + "-" + started + ") WHERE id=" + id + ";"
+    + ",ended_at_ms=" + now + ",duration_ms=MAX(0," + now + "-" + started + ") WHERE id=" + id + "; "
+    + "DELETE FROM activity_sessions WHERE id=" + id + " AND duration_ms=0;"
 }
 
 function countSql() { return "SELECT count(*) FROM activity_sessions;" }

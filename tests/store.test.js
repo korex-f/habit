@@ -38,6 +38,15 @@ try {
   sql(Store.recoverSql())
   assert.equal(scalar("SELECT duration_ms FROM activity_sessions WHERE id=" + crashId), 60_000)
 
+  // Zero-length sessions are not kept, whether closed normally or recovered.
+  const emptyId = Number(sql(Store.startSql(3_000_000)))
+  sql(Store.endSql(emptyId, 3_000_000, 3_000_000))
+  assert.equal(scalar("SELECT count(*) FROM activity_sessions WHERE id=" + emptyId), 0)
+  const unsavedId = Number(sql(Store.startSql(4_000_000)))
+  sql(Store.recoverSql())
+  assert.equal(scalar("SELECT count(*) FROM activity_sessions WHERE id=" + unsavedId), 0)
+  assert.equal(scalar("SELECT count(*) FROM activity_sessions"), 2)
+
   // Clear-history removes activity only. Configuration is a separate file.
   const settings = path.join(dir, "settings.json")
   fs.writeFileSync(settings, '{"version":1,"trackingEnabled":false}\n')
